@@ -1,0 +1,429 @@
+---
+title: Go SDK
+description: Complete reference for the Onshore Go client. Every method and type, with context handling, concurrency, retries, errors and examples for net/http services and batch jobs.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Go SDK
+
+Package `vault` (module `github.com/Onshore-HQ/onshore-go`) is the server SDK for Go. It covers the whole [data API](/api-reference/) using only the standard library.
+
+| | |
+| --- | --- |
+| Module | `github.com/Onshore-HQ/onshore-go`, package `vault` |
+| Source | [github.com/Onshore-HQ/onshore-go](https://github.com/Onshore-HQ/onshore-go) |
+| Go | 1.22 or later |
+| Dependencies | Standard library only |
+| Concurrency | A `*Client` is safe for concurrent use. The bearer token is behind a mutex |
+| Context | Every method takes a `context.Context`. Cancelling it stops the call, including waits between retries |
+
+## Install
+
+```sh
+go get github.com/Onshore-HQ/onshore-go@v0.1.0
+```
+
+## Create a client
+
+```go
+import vault "github.com/Onshore-HQ/onshore-go"
+
+client, err := vault.New(
+    os.Getenv("ONSHORE_URL"),          // https://vault.yourbank.example
+    os.Getenv("ONSHORE_SA_ID"),        // sa_…
+    os.Getenv("ONSHORE_KEY_ID"),       // key_…
+    os.Getenv("ONSHORE_PRIVATE_KEY"),  // base64 Ed25519 seed
+)
+if err != nil {
+    log.Fatal(err) // "the private key must be a base64 Ed25519 seed"
+}
+const vaultID = "v_live_gb01"
+```
+
+`New` checks the key at once, so a bad secret fails at start-up. Where the four values come from: [Authentication](/developers/authentication/).
+
+### Settings
+
+The returned `*Client` has exported fields you can change before first use:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `HTTP` | `&http.Client{Timeout: 10 * time.Second}` | Swap in your own client for a proxy, a private CA, mTLS or tracing |
+| `MaxAttempts` | `4` | Attempts for retryable failures. `1` turns retries off |
+| `BaseURL`, `ServiceAccountID`, `KeyID`, `PrivateKey` | from `New` | |
+
+```go
+pool := x509.NewCertPool()
+pool.AppendCertsFromPEM(caPEM)
+client.HTTP = &http.Client{
+    Timeout:   5 * time.Second,
+    Transport: otelhttp.NewTransport(&http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}),
+}
+```
+
+## How the client works
+
+- **Authentication.** The first call, and any call when the cached token has under a minute left, signs a two-minute EdDSA assertion (random `jti`, `aud: "onshore"`) and exchanges it for a 15-minute bearer token. Concurrent callers wait on one refresh. A **401** clears the token and returns the error; the next call signs again.
+- **Batching.** `Tokenize` and `Detokenize` send 500 items per request. `Index` in each result is the position in your slice. Batches are separate requests; an error in a later batch leaves earlier batches stored.
+- **Retries.** Network errors, **429** and **5xx** are retried until `MaxAttempts`, waiting about 100 ms, 200 ms, 400 ms… plus up to 100 ms of jitter. If `ctx` is cancelled during a wait, the call returns `ctx.Err()` at once.
+- **Failing closed.** Reveals never return a token as if it were the value; if the vault can't answer, you get an error.
+
+## Errors
+
+API errors are `*vault.Error`:
+
+```go
+type Error struct {
+    Status                int    // 0: no answer
+    Code, Message, Policy string // branch on Code; Message never holds a value
+    RequestID             string
+}
+```
+
+```go
+reveals, err := client.Detokenize(ctx, vaultID, []string{tok}, "Ticket 88213")
+var ve *vault.Error
+switch {
+case errors.As(err, &ve) && ve.Code == "policy_denied":
+    return nil, ErrForbidden
+case errors.As(err, &ve) && ve.Code == "token_not_found":
+    return nil, ErrGone
+case errors.Is(err, context.DeadlineExceeded):
+    return nil, err
+case err != nil:
+    return nil, fmt.Errorf("reveal failed: %w", err) // includes the code, never a value
+}
+```
+
+| `Status` | `Code` | Retried |
+| --- | --- | --- |
+| 0 | `network_error` | Yes |
+| 400 | `invalid_request` | No |
+| 401 | `unauthenticated` | No |
+| 403 | `policy_denied` | No |
+| 404 | `token_not_found`, `invalid_request`, `not_found` | No |
+| 409 | `duplicate_value` | No |
+| 413 | `too_large` | No |
+| 422 | `validation_failed` | No |
+| 429 | `rate_limited` | Yes |
+| 503 | `key_service_unavailable`, `detection_not_ready` | Yes |
+
+What each code means: [Node.js SDK errors](/developers/sdks/node/#errors) (the codes are the same in every SDK).
+
+## Methods
+
+| Method | Access rule action |
+| --- | --- |
+| `Tokenize`, `TokenizeWith` | `tokenize` |
+| `Detokenize`, `DetokenizeWith` | `detokenize` |
+| `InsertRecord` | `insert` |
+| `GetRecord` | `detokenize` |
+| `UpdateValue` | `insert` |
+| `Lookup` | `search` |
+| `SearchSubjects` | `search` |
+| `GetSubject` | `detokenize` |
+| `ExportSubject` | `export` |
+| `RestrictSubject`, `EraseSubject` | `delete` |
+| `ResidentCheck` | `compare` |
+| `Detect` | `tokenize` when tokenizing |
+| `CheckFlow` | |
+| `CreateClientToken` | `tokenize` / `detokenize` |
+| `Cloak`, `Uncloak`, `DeleteTwin` | `detokenize` for `Uncloak` |
+| `VerifyWebhook` (function) | |
+
+---
+
+### Tokenize and TokenizeWith
+
+```go
+func (c *Client) Tokenize(ctx context.Context, vault string, items []Item) ([]TokenResult, error)
+func (c *Client) TokenizeWith(ctx context.Context, vault string, items []Item, opts TokenizeOptions) ([]TokenResult, error)
+
+type Item struct { Field, Value, SubjectRef string }
+type TokenizeOptions struct { ContinueOnError, DryRun bool }
+type TokenResult struct { Index int; Token string; Existing bool; Error *ItemError }
+type ItemError struct { Code, Message, Policy string }
+```
+
+`Tokenize` fails a batch on its first bad item. `TokenizeWith` with `ContinueOnError` stores the good items and sets `Error` on the bad ones; `DryRun` checks everything and stores nothing. `Existing` is true when a *same value, same token* field already held the value.
+
+```go
+res, err := client.Tokenize(ctx, vaultID, []vault.Item{
+    {Field: "national_id", Value: "AB123456C", SubjectRef: "cust_1042"},
+    {Field: "phone", Value: "07700 900123", SubjectRef: "cust_1042"},
+})
+if err != nil {
+    return err
+}
+_, err = db.ExecContext(ctx, `UPDATE customers SET nino_tok=$1, phone_tok=$2 WHERE id=$3`, res[0].Token, res[1].Token, "cust_1042")
+```
+
+An import that reports bad rows by position, never by value:
+
+```go
+res, err := client.TokenizeWith(ctx, vaultID, items, vault.TokenizeOptions{ContinueOnError: true})
+if err != nil {
+    return err
+}
+for _, r := range res {
+    if r.Error != nil {
+        slog.Warn("row rejected", "row", r.Index, "code", r.Error.Code, "customer", rows[r.Index].ID)
+    }
+}
+```
+
+### Detokenize and DetokenizeWith
+
+```go
+func (c *Client) Detokenize(ctx context.Context, vault string, tokens []string, purpose string) ([]Reveal, error)
+func (c *Client) DetokenizeWith(ctx context.Context, vault string, tokens []RevealItem, purpose string, continueOnError bool) ([]Reveal, error)
+
+type RevealItem struct { Token, Redaction string } // Redaction: "", "masked" or "token_only"
+type Reveal struct { Index int; Decision, Value, Policy string; Error *ItemError }
+```
+
+`Decision` is `plaintext`, `masked`, `token_only` or `denied`. A denied item is a normal result with an empty `Value`. `purpose` is required (up to 500 characters) and recorded with every value.
+
+```go
+out, err := client.DetokenizeWith(ctx, vaultID, []vault.RevealItem{
+    {Token: c.NinoTok, Redaction: "masked"},   // masked here even if the rule allows more
+    {Token: c.PhoneTok},
+}, "Ticket "+ticketID, true)
+if err != nil {
+    return err
+}
+for _, r := range out {
+    switch {
+    case r.Error != nil:
+        // e.g. token_not_found for an erased customer
+    case r.Decision == "denied":
+        // show nothing
+    default:
+        show(r.Index, r.Value)
+    }
+}
+```
+
+### InsertRecord, GetRecord, UpdateValue
+
+```go
+func (c *Client) InsertRecord(ctx context.Context, vault string, fields map[string]string, subjectRef string) (Record, error)
+func (c *Client) GetRecord(ctx context.Context, vault, id, purpose string) (map[string]Reveal, error)
+func (c *Client) UpdateValue(ctx context.Context, vault, token, value string) error
+
+type Record struct { ID string; Tokens map[string]string }
+```
+
+`InsertRecord` stores all fields or none. `GetRecord` sends the purpose in the `X-RV-Purpose` header and decides each field like a reveal. `UpdateValue` works only on *new token each time* (cell) tokens.
+
+```go
+rec, err := client.InsertRecord(ctx, vaultID, map[string]string{
+    "full_name": "Samuel Adeyemi", "date_of_birth": "1988-03-14", "national_id": "AB123456C",
+}, "cust_1042")
+
+fields, err := client.GetRecord(ctx, vaultID, rec.ID, "KYC review "+caseID)
+name := fields["full_name"].Value
+
+err = client.UpdateValue(ctx, vaultID, c.AddressTok, "14 Harbour Street, Leith, EH6 6JJ")
+```
+
+### Lookup
+
+```go
+func (c *Client) Lookup(ctx context.Context, vault, field, value string) (string, error)
+```
+
+Finds a token by value through a keyed hash, without decrypting. The field must be deterministic or searchable. 60 a minute per caller.
+
+```go
+tok, err := client.Lookup(ctx, vaultID, "national_id", submitted)
+var ve *vault.Error
+if errors.As(err, &ve) && ve.Code == "token_not_found" {
+    return false, nil // new customer
+}
+```
+
+### People
+
+```go
+func (c *Client) SearchSubjects(ctx context.Context, vault string, q SubjectQuery) ([]Subject, int, error)
+func (c *Client) GetSubject(ctx context.Context, vault, subjectID string) (SubjectDetail, error)
+func (c *Client) ExportSubject(ctx context.Context, vault, subjectID, purpose string) ([]ExportedField, error)
+func (c *Client) RestrictSubject(ctx context.Context, vault, subjectID string, restricted bool, purpose string) (bool, error)
+func (c *Client) EraseSubject(ctx context.Context, vault, subjectID, purpose string) (int, error)
+```
+
+```go
+type SubjectQuery struct {
+    Query, FieldType, CreatedAfter, CreatedBefore string
+    HasReveals, Flagged                         bool
+    Sort, Dir                                   string // created_at|field_count|last_accessed, asc|desc
+    Limit, Offset                               int    // Limit 1–200, default 50
+}
+type Subject struct {
+    ID, Ref      string
+    FieldCount   int
+    CreatedAt    time.Time
+    LastAccessed *time.Time
+    Reveals30d   int
+    Restricted   bool
+}
+type SubjectDetail struct { Subject; Fields []SubjectField }
+type SubjectField struct { Field, DataType, Token, Masked, Decision, RecordID string }
+type ExportedField struct { Field, DataType, Value, Token, Decision string }
+```
+
+A complete erasure request:
+
+```go
+subs, _, err := client.SearchSubjects(ctx, vaultID, vault.SubjectQuery{Query: customerID})
+if err != nil || len(subs) == 0 {
+    return err
+}
+n, err := client.EraseSubject(ctx, vaultID, subs[0].ID, "Erasure request "+ref)
+slog.Info("erased", "records", n, "ref", ref)
+```
+
+`GetSubject` never returns full values. `ExportSubject` returns values as the rules allow. `RestrictSubject` stops every reveal about the person until lifted. Full flow: [Data subject requests](/developers/recipes/data-subject-requests/).
+
+### ResidentCheck
+
+```go
+func (c *Client) ResidentCheck(ctx context.Context, vault, token, check, arg, purpose string) (bool, error)
+```
+
+`check` is `equals`, `name_match` (a `person_name` field), `age_at_least` (a `date` field, `arg` in whole years) or `amount_at_least` (an `amount` field; `£1,250.50` and `1.250,50 €` both read as 1250.5). Only `true` or `false` leaves the country.
+
+```go
+adult, err := client.ResidentCheck(ctx, vaultID, c.DOBTok, "age_at_least", "18", "Card eligibility")
+```
+
+### Detect
+
+```go
+func (c *Client) Detect(ctx context.Context, text string, opts DetectOptions) (Detection, error)
+
+type DetectOptions struct { Vault string; Tokenize bool; Entities []string; IncludeShadow bool }
+type Detection struct { Entities []Entity; Text string; RulesetVersion int }
+type Entity struct { Type string; Start, End int; Score float64; Custom bool; EntityVersion int; Shadow bool }
+```
+
+`Start` and `End` are byte offsets, which match Go string indexing: `text[e.Start:e.End]`.
+
+```go
+d, err := client.Detect(ctx, msg, vault.DetectOptions{Vault: vaultID, Tokenize: true})
+saveToHelpdesk(d.Text) // identifiers replaced by tokens
+```
+
+### CheckFlow
+
+```go
+func (c *Client) CheckFlow(ctx context.Context, vault, flow, text string) (FlowReport, error)
+
+type FlowReport struct { Identifiers, Tokens int; Clean bool; ByType map[string]int }
+```
+
+```go
+rep, err := client.CheckFlow(ctx, vaultID, "flow_nightly_bq", sample)
+if err == nil && !rep.Clean {
+    return fmt.Errorf("export blocked: %v", rep.ByType)
+}
+```
+
+### CreateClientToken
+
+```go
+func (c *Client) CreateClientToken(ctx context.Context, vault string, req ClientTokenRequest) (ClientToken, error)
+
+type ClientTokenRequest struct {
+    Kind, Origin string   // "collect"|"reveal"; https://… or rvapp://<app id>
+    Fields       []string // collect, up to 10
+    Tokens       []string // reveal, up to 20
+    Purpose, OnBehalfOf, SubjectRef, BindIP string
+    TTLSeconds   int      // 0 = 120; at most 600
+}
+type ClientToken struct { ClientToken string; ExpiresAt time.Time }
+```
+
+```go
+func idFormToken(w http.ResponseWriter, r *http.Request) {
+    user := auth.User(r)
+    ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+    t, err := client.CreateClientToken(r.Context(), vaultID, vault.ClientTokenRequest{
+        Kind: "collect", Origin: "https://app.yourbank.example",
+        Fields: []string{"national_id"}, SubjectRef: user.CustomerID, BindIP: ip,
+    })
+    if err != nil {
+        http.Error(w, "unavailable", http.StatusServiceUnavailable)
+        return
+    }
+    json.NewEncoder(w).Encode(map[string]string{"clientToken": t.ClientToken})
+}
+```
+
+### Cloak, Uncloak, DeleteTwin
+
+```go
+func (c *Client) Cloak(ctx context.Context, vault, text string, req CloakRequest) (Cloaked, error)
+func (c *Client) Uncloak(ctx context.Context, vault, twinID, text, purpose string) (Uncloaked, error)
+func (c *Client) DeleteTwin(ctx context.Context, vault, twinID string) error
+
+type CloakRequest struct { ProfileID string; Options map[string]string; KeepDays int }
+type Cloaked struct { Text string; Changed map[string]int; ID string }
+type Uncloaked struct { Text string; Decisions map[string]string }
+```
+
+```go
+cl, err := client.Cloak(ctx, vaultID, userMsg, vault.CloakRequest{
+    Options: map[string]string{"person_name": "synthetic", "amount": "band"}, KeepDays: 1,
+})
+reply, err := llm.Complete(ctx, cl.Text)
+out, err := client.Uncloak(ctx, vaultID, cl.ID, reply, "Chat "+chatID)
+defer client.DeleteTwin(context.Background(), vaultID, cl.ID)
+```
+
+Every option and choice: [Cloak text for AI](/developers/recipes/cloak-for-ai/).
+
+### VerifyWebhook
+
+```go
+func VerifyWebhook(secret string, rawBody []byte, signatureHeader string, tolerance time.Duration) bool
+```
+
+`tolerance` of 0 means 5 minutes. Read the body before decoding it:
+
+```go
+func onshoreHook(w http.ResponseWriter, r *http.Request) {
+    body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+    if err != nil || !vault.VerifyWebhook(secret, body, r.Header.Get("X-Rv-Signature"), 0) {
+        w.WriteHeader(http.StatusUnauthorized)
+        return
+    }
+    var ev struct{ Type string `json:"type"` }
+    json.Unmarshal(body, &ev)
+    queue <- body
+    w.WriteHeader(http.StatusNoContent)
+}
+```
+
+## Testing your code
+
+Point the client at an `httptest.Server`. It only needs `/v1/auth/token` to answer:
+
+```go
+srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    switch r.URL.Path {
+    case "/v1/auth/token":
+        fmt.Fprint(w, `{"access_token":"t","expires_in":900}`)
+    default:
+        fmt.Fprint(w, `{"results":[{"index":0,"decision":"masked","value":"•• •• •• 56 C"}]}`)
+    }
+}))
+defer srv.Close()
+seed := base64.StdEncoding.EncodeToString(make([]byte, 32))
+client, _ := vault.New(srv.URL, "sa_test", "key_test", seed)
+client.MaxAttempts = 1
+```
+
+For integration tests use a `v_test_` vault and the made-up values in [Test safely](/developers/recipes/test-safely/).

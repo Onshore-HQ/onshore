@@ -1,0 +1,199 @@
+---
+title: iOS SDK
+description: Complete reference for the Onshore Swift package. SecureClient, CollectForm and RevealView, with SwiftUI and UIKit examples, errors and certificate pinning.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# iOS SDK <Early />
+
+The `Onshore` Swift package collects and shows sensitive values in an iOS app, using the same single-use client tokens as the [web components](/developers/sdks/web/). It holds **no credentials**.
+
+| | |
+| --- | --- |
+| Package | Swift Package `Onshore`, product `Onshore` |
+| Source | [github.com/Onshore-HQ/onshore-ios](https://github.com/Onshore-HQ/onshore-ios) |
+| Platforms | iOS 15+, macOS 12+ (client only on macOS) |
+| Swift | 5.9 tools |
+| Dependencies | None |
+| Concurrency | `async`/`await`. `SecureClient` is `Sendable` |
+
+## Install
+
+In Xcode, **File → Add Package Dependencies**, and enter `https://github.com/Onshore-HQ/onshore-ios`. Or in `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/Onshore-HQ/onshore-ios", from: "0.1.0"),
+],
+targets: [
+    .target(name: "App", dependencies: [.product(name: "Onshore", package: "onshore-ios")]),
+]
+```
+
+## Set up
+
+<Steps>
+
+### List your app as an origin
+
+In **Vaults → Secure components**, add `rvapp://` followed by your bundle ID in lower case: `rvapp://com.yourbank.wallet`.
+
+### Mint client tokens on your server
+
+Your app asks your own API, which checks the signed-in user and mints a token:
+
+```ts
+const { client_token } = await vault.createClientToken(VAULT, {
+  kind: "collect", origin: "rvapp://com.yourbank.wallet",
+  fields: ["national_id"], subjectRef: user.customerId,
+});
+```
+
+### Use it in the app
+
+```swift
+import Onshore
+
+let onshore = SecureClient(
+    baseURL: URL(string: "https://vault.yourbank.example")!,
+    appOrigin: "rvapp://com.yourbank.wallet"
+)
+```
+
+</Steps>
+
+## Collect with CollectForm
+
+```swift
+struct AddIDView: View {
+    let clientToken: String
+    @State private var error: String?
+
+    var body: some View {
+        VStack {
+            CollectForm(
+                client: onshore,
+                clientToken: clientToken,
+                labels: ["national_id": "National Insurance number"],
+                submitLabel: "Save",
+                onTokens: { tokens in
+                    Task { try await api.saveIDToken(tokens["national_id"]!) }
+                },
+                onError: { e in
+                    switch e {
+                    case .validationFailed: break          // shown on the field; the person can fix it
+                    case .invalidClientToken: error = "This form expired. Open it again."
+                    case .denied: error = "You can't add this."
+                    case .rateLimited: error = "Too many tries. Wait a minute."
+                    case .server, .transport: error = "Couldn't save. Try again."
+                    }
+                }
+            )
+            if let error { Text(error).foregroundStyle(.red) }
+        }
+    }
+}
+```
+
+`CollectForm` asks the vault which fields the token covers and builds one field each, with a number pad for numeric data types. It calls `onTokens` with a token per field. It has no way to give your code what was typed.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `client` | | Your `SecureClient` |
+| `clientToken` | | From your server |
+| `labels` | `[:]` | Field name to label. Defaults to the field name |
+| `submitLabel` | `"Continue"` | The button text |
+| `onTokens` | | Called once with `[field: token]` on success |
+| `onError` | ignore | Called with a `VaultError` |
+
+What the form does for you: autocorrect, spell checking, autofill suggestions and the edit menu are off on each field (it uses a `UITextField` for this, since SwiftUI can't turn them off); fields are cleared and hidden when the app stops being active, so they don't appear in the app switcher's snapshot; a format mistake marks the field and keeps the token usable.
+
+## Reveal with RevealView
+
+```swift
+RevealView(client: onshore, clientToken: revealToken, hideAfter: 30) { error in
+    log.notice("reveal failed: \(String(describing: error))")
+}
+```
+
+Shows each value in a monospaced `Text` marked `.privacySensitive()`, or "You do not have access to this" when denied. Values are removed after `hideAfter` seconds, when the app stops being active, and when the view disappears.
+
+## SecureClient
+
+For your own UI, call the client directly.
+
+```swift
+public init(baseURL: URL, appOrigin: String, session: URLSession = SecureClient.defaultSession())
+public func describe(clientToken: String) async throws -> ComponentDescription
+public func collect(clientToken: String, values: [String: String]) async throws -> [String: String]
+public func reveal(clientToken: String) async throws -> [RevealedValue]
+```
+
+| Method | Returns |
+| --- | --- |
+| `describe` | `ComponentDescription(kind: "collect" \| "reveal", fields: [FieldDescription(name, dataType)], tokens: Int)`. Doesn't use up the token |
+| `collect` | A token per field. Spends the token, unless a value fails its format check |
+| `reveal` | `[RevealedValue(decision, value, errorCode)]` in the order the token names them. Spends the token |
+
+`defaultSession()` is an ephemeral `URLSession` with no cache and no cookie storage, and a 15-second request timeout, so nothing from these calls is written to disk.
+
+### Errors
+
+```swift
+public enum VaultError: Error, Equatable {
+    case invalidClientToken                 // unknown, expired, used, or for another app: get a new one
+    case validationFailed(fields: [String]) // names only; the token still works
+    case denied                             // an access rule refused
+    case rateLimited                        // too many attempts from this address
+    case server(status: Int, code: String)  // anything else
+    case transport                          // network failure or unreadable response
+}
+```
+
+System networking errors are replaced by `.transport`, because they can include the request URL and state.
+
+### Pinning your server's certificate
+
+```swift
+final class Pinner: NSObject, URLSessionDelegate {
+    let pinned: Set<String> // base64 SHA-256 of the server's public key
+    init(pinned: Set<String>) { self.pinned = pinned }
+
+    func urlSession(_ s: URLSession, didReceive c: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard let trust = c.protectionSpace.serverTrust,
+              SecTrustEvaluateWithError(trust, nil),
+              let key = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first.flatMap(SecCertificateCopyKey),
+              let data = SecKeyCopyExternalRepresentation(key, nil) as Data?,
+              pinned.contains(Data(SHA256.hash(data: data)).base64EncodedString())
+        else { return completionHandler(.cancelAuthenticationChallenge, nil) }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+}
+
+let config = URLSessionConfiguration.ephemeral
+config.urlCache = nil
+let session = URLSession(configuration: config, delegate: Pinner(pinned: ["…"]), delegateQueue: nil)
+let onshore = SecureClient(baseURL: vaultURL, appOrigin: "rvapp://com.yourbank.wallet", session: session)
+```
+
+## UIKit
+
+Host the SwiftUI views with `UIHostingController`:
+
+```swift
+let form = CollectForm(client: onshore, clientToken: token, onTokens: { [weak self] t in self?.save(t) })
+let host = UIHostingController(rootView: form)
+addChild(host)
+view.addSubview(host.view)
+host.didMove(toParent: self)
+```
+
+## Limits
+
+<Callout type="warning">
+**An app is weaker than a browser frame.** While a value is typed it exists in your app's process, and a hostile library inside your app could read it. `rvapp://` is a name, not proof of which app is calling; set `bind_ip` when minting if you know the device's address. iOS has no way to block screenshots, so values can be captured while shown.
+</Callout>
+
+**Tested:** the client and views passed 7 UI tests on an iOS 26.5 simulator against a live install. Nothing has run on a physical device yet; test in your app on real devices before release.

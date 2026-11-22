@@ -1,0 +1,317 @@
+---
+title: Java SDK
+description: Complete reference for the Onshore Java client. Every method and record type, with threading, retries, errors and Spring Boot examples.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Java SDK
+
+`ng.onshore.VaultClient` is the server SDK for Java and other JVM languages (Kotlin, Scala). It covers the whole [data API](/api-reference/) with no dependencies: `java.net.http.HttpClient` for HTTP, the JDK's Ed25519 for signing, and a small built-in JSON reader.
+
+| | |
+| --- | --- |
+| Package | Java package `ng.onshore`; Maven `com.onshorevault:onshore-sdk` |
+| Source | [github.com/Onshore-HQ/onshore-java](https://github.com/Onshore-HQ/onshore-java) |
+| Java | 17 or later |
+| Dependencies | None |
+| Threads | One client is safe to share across threads (token refresh is synchronised) |
+| Calls | Blocking. Run them on a worker pool, or on virtual threads in Java 21 |
+
+## Install
+
+It isn't on Maven Central yet. Build it and install it into your local Maven repository first:
+
+```sh
+git clone https://github.com/Onshore-HQ/onshore-java && cd onshore-java
+mvn install
+```
+
+Then add the dependency (Gradle needs `mavenLocal()` in its repositories):
+
+<Tabs items={["Maven", "Gradle"]}>
+<Tabs.Tab>
+```xml
+<dependency>
+  <groupId>com.onshorevault</groupId>
+  <artifactId>onshore-sdk</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```kotlin
+implementation("com.onshorevault:onshore-sdk:0.1.0")
+```
+</Tabs.Tab>
+</Tabs>
+
+## Create a client
+
+```java
+import ng.onshore.VaultClient;
+
+VaultClient vault = new VaultClient(
+    System.getenv("ONSHORE_URL"),         // https://vault.yourbank.example
+    System.getenv("ONSHORE_SA_ID"),       // sa_…
+    System.getenv("ONSHORE_KEY_ID"),      // key_…
+    System.getenv("ONSHORE_PRIVATE_KEY"), // base64 Ed25519 seed
+    null);                                // default HttpClient
+String VAULT = "v_live_gb01";
+```
+
+### Constructors
+
+```java
+VaultClient(String baseUrl, String serviceAccountId, String keyId, String seedB64, HttpClient http)
+VaultClient(String baseUrl, String serviceAccountId, String keyId, String seedB64, HttpClient http, int maxAttempts, Duration timeout)
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `http` | A client with a 5-second connect timeout | Pass your own for a proxy, a private CA (`SSLContext`) or an executor |
+| `maxAttempts` | `4` | Attempts for retryable failures |
+| `timeout` | 10 seconds | Per attempt |
+
+An invalid key throws `IllegalArgumentException` (or a key exception) from the constructor.
+
+```java
+HttpClient http = HttpClient.newBuilder()
+    .sslContext(sslContextTrusting("/etc/ssl/yourbank-ca.pem"))
+    .proxy(ProxySelector.of(new InetSocketAddress("proxy.internal", 3128)))
+    .connectTimeout(Duration.ofSeconds(3))
+    .build();
+VaultClient vault = new VaultClient(url, sa, key, seed, http, 3, Duration.ofSeconds(5));
+```
+
+### Spring Boot
+
+```java
+@Configuration
+class OnshoreConfig {
+    @Bean
+    VaultClient vaultClient(@Value("${onshore.url}") String url, @Value("${onshore.sa-id}") String sa,
+                            @Value("${onshore.key-id}") String key, @Value("${onshore.private-key}") String seed) throws Exception {
+        return new VaultClient(url, sa, key, seed, null);
+    }
+}
+```
+
+## How the client works
+
+- **Authentication.** Signs a two-minute EdDSA assertion and exchanges it for a 15-minute bearer token, refreshed when under 60 seconds remain. A **401** drops the token and throws; the next call signs again.
+- **Batching.** `tokenize` and `detokenize` send 500 per request; `index()` is the position in your list.
+- **Retries.** Network failures, **429** and **5xx** are retried with growing, jittered waits (about 100 ms up to 2 s) until `maxAttempts`.
+- **Failing closed.** Reveals never return a token as if it were the value.
+
+## Errors
+
+Every failure throws `VaultClient.VaultException`, an unchecked exception:
+
+| Field | Meaning |
+| --- | --- |
+| `status` | HTTP status; `0` when there was no answer |
+| `code` | `invalid_request`, `unauthenticated`, `policy_denied`, `token_not_found`, `not_found`, `duplicate_value`, `too_large`, `validation_failed`, `rate_limited`, `key_service_unavailable`, `detection_not_ready`, `network_error` |
+| `policy` | The access rule that refused, when there is one |
+| `requestId` | For support and the audit log |
+| `getMessage()` | `code: message`. Never contains a stored value |
+
+Methods are also declared `throws Exception` because the JDK's HTTP and crypto calls are.
+
+```java
+try {
+    String tok = vault.lookup(VAULT, "national_id", submitted);
+} catch (VaultClient.VaultException e) {
+    if ("token_not_found".equals(e.code)) return Optional.empty();
+    if (e.status == 0 || e.status >= 500) throw new ServiceUnavailableException(e.requestId);
+    throw e;
+}
+```
+
+## Methods
+
+### tokenize
+
+```java
+List<String> tokenize(String vault, String fieldName, List<String> values)
+List<TokenResult> tokenize(String vault, List<Item> items, boolean continueOnError, boolean dryRun)
+
+record Item(String field, String value, String subjectRef)   // also Item(field, value)
+record TokenResult(int index, String token, boolean existing, ItemError error)
+record ItemError(String code, String message, String policy)
+```
+
+The first form stores many values of one field and returns just the tokens; the first bad value throws. The second takes any mix of fields with a `subjectRef` per item.
+
+```java
+var results = vault.tokenize(VAULT, List.of(
+    new VaultClient.Item("national_id", "AB123456C", "cust_1042"),
+    new VaultClient.Item("phone", "07700 900123", "cust_1042")), false, false);
+customer.setNinoToken(results.get(0).token());
+
+// Import that keeps going past bad rows
+var res = vault.tokenize(VAULT, items, true, false);
+res.stream().filter(r -> r.error() != null)
+   .forEach(r -> log.warn("row {} rejected: {}", r.index(), r.error().code()));
+```
+
+### detokenize
+
+```java
+List<Reveal> detokenize(String vault, List<String> tokens, String purpose)
+List<Reveal> detokenize(String vault, List<RevealItem> items, String purpose, boolean continueOnError)
+
+record RevealItem(String token, String redaction)   // also RevealItem(token)
+record Reveal(int index, String decision, String value, String policy, String errorCode)
+```
+
+The first form always continues past bad tokens: check `errorCode()`. `decision()` is `plaintext`, `masked`, `token_only` or `denied`; `value()` is null when denied.
+
+```java
+List<VaultClient.Reveal> out = vault.detokenize(VAULT,
+    List.of(new VaultClient.RevealItem(c.ninoToken(), "masked"), new VaultClient.RevealItem(c.phoneToken())),
+    "Ticket " + ticketId, true);
+String phone = "denied".equals(out.get(1).decision()) ? null : out.get(1).value();
+```
+
+### insertRecord, getRecord, updateValue
+
+```java
+StoredRecord insertRecord(String vault, Map<String, String> fields, String subjectRef)
+Map<String, Reveal> getRecord(String vault, String id, String purpose)
+void updateValue(String vault, String token, String value)
+
+record StoredRecord(String id, Map<String, String> tokens)
+```
+
+```java
+var rec = vault.insertRecord(VAULT, Map.of("full_name", "Samuel Adeyemi", "national_id", "AB123456C"), "cust_1042");
+var fields = vault.getRecord(VAULT, rec.id(), "KYC review " + caseId);
+vault.updateValue(VAULT, c.addressToken(), "14 Harbour Street, Leith, EH6 6JJ"); // cell tokens only
+```
+
+### lookup
+
+```java
+String lookup(String vault, String fieldName, String value)
+```
+
+Throws with `code` `token_not_found` when there's no match. Deterministic or searchable fields only; 60 a minute per caller.
+
+### People
+
+```java
+SubjectPage searchSubjects(String vault, Map<String, Object> query)
+SubjectDetail getSubject(String vault, String subjectId)
+List<ExportedField> exportSubject(String vault, String subjectId, String purpose)
+boolean restrictSubject(String vault, String subjectId, boolean restricted, String purpose)
+int eraseSubject(String vault, String subjectId, String purpose)
+
+record SubjectPage(List<Subject> subjects, int total)
+record Subject(String id, String ref, int fieldCount, String createdAt, String lastAccessed, int reveals30d, boolean restricted)
+record SubjectDetail(Subject subject, List<SubjectField> fields)
+record SubjectField(String field, String dataType, String token, String masked, String decision, String recordId)
+record ExportedField(String field, String dataType, String value, String token, String decision)
+```
+
+Query keys: `query`, `field_type`, `has_reveals`, `flagged`, `created_after`, `created_before`, `sort`, `dir`, `limit` (1 to 200), `offset`.
+
+```java
+var page = vault.searchSubjects(VAULT, Map.of("query", "cust_1042"));
+String subjectId = page.subjects().get(0).id();
+var rows = vault.exportSubject(VAULT, subjectId, "DSAR " + ref);   // access request
+int erased = vault.eraseSubject(VAULT, subjectId, "Erasure " + ref); // can't be undone
+```
+
+### residentCheck
+
+```java
+boolean residentCheck(String vault, String token, String check, String arg, String purpose)
+```
+
+`equals`, `name_match`, `age_at_least` (years) or `amount_at_least`. Only the answer leaves the country.
+
+```java
+boolean adult = vault.residentCheck(VAULT, c.dobToken(), "age_at_least", "18", "Card eligibility");
+```
+
+### detect
+
+```java
+Detection detect(String text, String vault, boolean tokenize, List<String> entities, boolean includeShadow)
+
+record Detection(List<Entity> entities, String text, int rulesetVersion)
+record Entity(String type, int start, int end, double score, boolean custom, int entityVersion, boolean shadow)
+```
+
+<Callout>
+`start` and `end` are **UTF-8 byte** offsets. Java strings are UTF-16, so for text with non-ASCII characters slice the bytes: `new String(Arrays.copyOfRange(text.getBytes(UTF_8), e.start(), e.end()), UTF_8)`.
+</Callout>
+
+### checkFlow
+
+```java
+FlowReport checkFlow(String vault, String flow, String text)
+record FlowReport(int identifiers, int tokens, boolean clean, Map<String, Integer> byType)
+```
+
+### createClientToken
+
+```java
+ClientToken createClientToken(String vault, ClientTokenRequest req)
+
+record ClientTokenRequest(String kind, String origin, List<String> fields, List<String> tokens, String purpose,
+                          String onBehalfOf, String subjectRef, String bindIp, int ttlSeconds)
+// helpers: ClientTokenRequest.collect(origin, fields, subjectRef), .reveal(origin, tokens, purpose, onBehalfOf),
+//          .withBindIp(ip), .withTtlSeconds(seconds)
+record ClientToken(String clientToken, String expiresAt)
+```
+
+```java
+@PostMapping("/api/id-form")
+Map<String, String> idForm(@AuthenticationPrincipal User user, HttpServletRequest req) throws Exception {
+    var t = vault.createClientToken(VAULT,
+        VaultClient.ClientTokenRequest.collect("https://app.yourbank.example", List.of("national_id"), user.customerId())
+            .withBindIp(req.getRemoteAddr()));
+    return Map.of("clientToken", t.clientToken());
+}
+```
+
+### cloak, uncloak, deleteTwin
+
+```java
+Cloaked cloak(String vault, String text, String profileId, Map<String, String> options, int keepDays)
+Uncloaked uncloak(String vault, String twinId, String text, String purpose)
+void deleteTwin(String vault, String twinId)
+
+record Cloaked(String text, Map<String, Integer> changed, String id)
+record Uncloaked(String text, Map<String, String> decisions)
+```
+
+```java
+var cl = vault.cloak(VAULT, message, null, Map.of("person_name", "synthetic", "amount", "band"), 1);
+String reply = llm.complete(cl.text());
+String answer = vault.uncloak(VAULT, cl.id(), reply, "Chat " + chatId).text();
+vault.deleteTwin(VAULT, cl.id());
+```
+
+### verifyWebhook
+
+```java
+static boolean verifyWebhook(String secret, byte[] rawBody, String signatureHeader, Duration tolerance)
+```
+
+`tolerance` null means 5 minutes. In Spring, take the body as `byte[]`:
+
+```java
+@PostMapping(value = "/hooks/onshore", consumes = "application/json")
+ResponseEntity<Void> hook(@RequestBody byte[] body, @RequestHeader("X-Rv-Signature") String sig) {
+    if (!VaultClient.verifyWebhook(secret, body, sig, null)) return ResponseEntity.status(401).build();
+    events.publish(body);
+    return ResponseEntity.noContent().build();
+}
+```
+
+## Testing your code
+
+Run a fake vault with the JDK's `com.sun.net.httpserver.HttpServer`, answering `/v1/auth/token` with `{"access_token":"t","expires_in":900}` and anything else as your test needs, and point the client at it. For integration tests use a `v_test_` vault and [made-up values](/developers/recipes/test-safely/).

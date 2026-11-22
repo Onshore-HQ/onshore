@@ -1,0 +1,111 @@
+---
+title: React Native SDK
+description: Complete reference for @onshorehq/react-native. createClient, CollectForm and RevealView, with props, errors, Expo notes and limits.
+---
+
+import { Callout } from "nextra/components";
+
+# React Native SDK <Early />
+
+`@onshorehq/react-native` collects and shows sensitive values in a React Native app using single-use client tokens. It holds **no credentials**.
+
+| | |
+| --- | --- |
+| Package | `@onshorehq/react-native` |
+| Source | [github.com/Onshore-HQ/onshore-react-native](https://github.com/Onshore-HQ/onshore-react-native) |
+| Peer dependencies | `react` 18+, `react-native` 0.72+ |
+| Native code | None. Works in Expo Go and bare apps |
+| Exports | `createClient`, `CollectForm`, `RevealView`, `VaultError` and types |
+
+## Install
+
+```sh npm2yarn
+npm install @onshorehq/react-native
+```
+
+List your app under **Vaults → Secure components** as `rvapp://` plus its ID in lower case (`rvapp://com.yourbank.wallet`), and have your server mint client tokens for that origin with [`createClientToken`](/developers/sdks/node/#createclienttoken).
+
+## createClient
+
+```ts
+import { createClient } from "@onshorehq/react-native";
+
+export const onshore = createClient({
+  baseUrl: "https://vault.yourbank.example",
+  appOrigin: "rvapp://com.yourbank.wallet",
+  timeoutMs: 15000,   // default
+  // fetch: myFetch,  // e.g. one that pins certificates
+});
+```
+
+| Method | Returns |
+| --- | --- |
+| `describe(clientToken)` | `{ kind: "collect" \| "reveal", fields: { name, data_type }[], tokens: number }`. Doesn't spend the token |
+| `collect(clientToken, values)` | `Record<string, string>`: a token per field. Spends the token unless a value fails its check |
+| `reveal(clientToken)` | `{ decision?, value?, error?: { code } }[]`. Spends the token |
+
+## CollectForm
+
+```tsx
+import { CollectForm, VaultError } from "@onshorehq/react-native";
+
+export function AddIdScreen({ route }) {
+  const [message, setMessage] = useState<string>();
+  return (
+    <>
+      <CollectForm
+        client={onshore}
+        clientToken={route.params.clientToken}
+        labels={{ national_id: "National Insurance number" }}
+        submitLabel="Save"
+        onTokens={(t) => api.saveIdToken(t.national_id)}
+        onError={(e: VaultError) => {
+          if (e.code === "validation_failed") return;           // fields are marked; fix and resubmit
+          if (e.code === "invalid_client_token") setMessage("This form expired. Open it again.");
+          else setMessage("Couldn't save. Try again.");
+        }}
+      />
+      {message && <Text>{message}</Text>}
+    </>
+  );
+}
+```
+
+| Prop | Type | Default |
+| --- | --- | --- |
+| `client` | from `createClient` | required |
+| `clientToken` | `string` | required |
+| `labels` | `Record<string, string>` | `{}` |
+| `submitLabel` | `string` | `"Continue"` |
+| `onTokens` | `(tokens) => void` | required |
+| `onError` | `(e: VaultError) => void` | none |
+
+Fields have autocorrect, autofill, suggestions and context menus turned off, use a number pad for numeric data types, and are cleared when the component unmounts.
+
+## RevealView
+
+```tsx
+<RevealView client={onshore} clientToken={revealToken} hideAfter={30} onError={(e) => log(e.code)} />
+```
+
+Values are removed after `hideAfter` seconds, when the app goes to the background (`AppState`), and on unmount. A denied value shows "You do not have access to this".
+
+## VaultError
+
+```ts
+class VaultError extends Error {
+  code: "invalid_client_token" | "validation_failed" | "policy_denied" | "rate_limited" | "server" | "transport";
+  fields: string[];   // for validation_failed: names only
+  status: number;
+}
+```
+
+Network errors become `transport`, without the underlying error, because it can carry the request.
+
+## Limits
+
+<Callout type="warning">
+**Weaker than native and web.** All JavaScript in a React Native app shares one context, so any library in the bundle could read a value while it's typed. There's no screenshot blocking (use a native module such as `react-native-screenshot-prevent` if you need it). `rvapp://` is a name, not proof of which app is calling; set `bind_ip` when minting.
+</Callout>
+
+**Tested:** the client in Node against a live install, and the components with `react-test-renderer`. **It hasn't yet run inside a React Native app.** Test on real devices before release.

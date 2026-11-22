@@ -1,0 +1,86 @@
+---
+title: SDKs
+description: Server SDKs for Node.js, Python, Go, Java and PHP, and client SDKs for the web, iOS, Android and React Native. What each covers, how they behave, and which to use where.
+---
+
+import { Callout } from "nextra/components";
+
+# SDKs
+
+There are two kinds of SDK, and they never mix.
+
+- **Server SDKs** hold a service account's private key. They store and reveal values, search people, run checks and mint client tokens. They run on your servers only.
+- **Client SDKs** run in browsers and apps and hold **no credentials**. They collect or show values inside a component the vault controls, using a single-use client token your server mints, so your front end never touches the value.
+
+## Server SDKs
+
+Every server SDK covers the whole data API and behaves the same way.
+
+| | Node.js | Python | Go | Java | PHP |
+| --- | --- | --- | --- | --- | --- |
+| Package | `@onshorehq/sdk` | `onshore` | `github.com/Onshore-HQ/onshore-go` | `com.onshorevault:onshore-sdk` | `onshorehq/sdk` |
+| Source | [onshore-node](https://github.com/Onshore-HQ/onshore-node) | [onshore-python](https://github.com/Onshore-HQ/onshore-python) | [onshore-go](https://github.com/Onshore-HQ/onshore-go) | [onshore-java](https://github.com/Onshore-HQ/onshore-java) | [onshore-php](https://github.com/Onshore-HQ/onshore-php) |
+| Runtime | Node 20+ | Python 3.9+ | Go 1.22+ | Java 17+ | PHP 8.1+ |
+| Dependencies | none | `cryptography` | none | none | `sodium`, `curl` (built in) |
+| Style | `async` | blocking | `context.Context` | blocking | blocking |
+| Reference | [Node.js](/developers/sdks/node/) | [Python](/developers/sdks/python/) | [Go](/developers/sdks/go/) | [Java](/developers/sdks/java/) | [PHP](/developers/sdks/php/) |
+
+### Methods in every server SDK
+
+Names follow each language's style: `insertRecord` in Node, Java and PHP, `insert_record` in Python, `InsertRecord` in Go.
+
+| Task | Method | API |
+| --- | --- | --- |
+| Store values, get tokens (with `continue_on_error`, `dry_run`) | `tokenize` | `POST /v1/vaults/{vault}/tokenize` |
+| Reveal values as rules allow (with per-item `redaction`) | `detokenize` | `POST …/detokenize` |
+| Store several fields for one person | `insertRecord` | `POST …/records` |
+| Read a record | `getRecord` | `GET …/records/{id}` |
+| Change the value behind a cell token | `updateValue` | `PUT …/tokens/{token}` |
+| Find a token by value | `lookup` | `POST …/lookup` |
+| List and filter people | `searchSubjects` | `POST …/subjects/search` |
+| One person, masked | `getSubject` | `GET …/subjects/{id}` |
+| Export a person's data | `exportSubject` | `GET …/subjects/{id}/export` |
+| Restrict a person | `restrictSubject` | `POST …/subjects/{id}/restrict` |
+| Erase a person | `eraseSubject` | `DELETE …/subjects/{id}` |
+| Yes-or-no check in the country | `residentCheck` | `POST …/resident/check` |
+| Find identifiers in text | `detect` | `POST /v1/detect` |
+| Report a batch before it leaves | `checkFlow` | `POST …/flows/{flow}/check` |
+| Token for a secure component | `createClientToken` | `POST …/client-tokens` |
+| Cloak text for AI, and restore it | `cloak`, `uncloak`, `deleteTwin` | `POST …/cloak`, `POST …/uncloak`, `DELETE …/twins/{id}` |
+| Check a webhook signature | `verifyWebhook` | (local) |
+
+### Shared behaviour
+
+| | |
+| --- | --- |
+| **Authentication** | Signs a two-minute Ed25519 assertion and exchanges it for a 15-minute bearer token, refreshed a minute before expiry. You never handle tokens. See [Authentication](/developers/authentication/) |
+| **Batching** | `tokenize` and `detokenize` accept any number of items and send 500 per request. Each result's `index` is its position in your input |
+| **Retries** | Network failures, timeouts, 429 and 5xx are retried with growing, jittered waits, 4 attempts by default. Other errors are returned at once |
+| **401** | Clears the cached token and fails. The next call signs a fresh assertion |
+| **Failing closed** | A reveal never returns a token as if it were the value. If the vault can't answer, the call fails |
+| **Errors** | One error type per SDK with `status`, `code`, `message`, `policy` and request ID. Messages never contain a stored value. Codes are listed in [Retries and errors](/developers/recipes/retries-and-errors/) |
+| **Timeouts** | 10 seconds per attempt by default |
+
+## Client SDKs
+
+| | Web | iOS | Android | React Native |
+| --- | --- | --- | --- | --- |
+| Package | `rv.js`, served by your vault | Swift package `Onshore` | `ng.onshore.sdk` | `@onshorehq/react-native` |
+| Source | Part of the vault | [onshore-ios](https://github.com/Onshore-HQ/onshore-ios) | [onshore-android](https://github.com/Onshore-HQ/onshore-android) | [onshore-react-native](https://github.com/Onshore-HQ/onshore-react-native) |
+| Collect | `Onshore.collect` | `CollectForm` | `CollectView` | `<CollectForm>` |
+| Reveal | `Onshore.reveal` | `RevealView` | `RevealView` | `<RevealView>` |
+| Value isolation | Separate origin: your page can't read it | In your app's process | In your app's process | Shared JS context |
+| Screenshots | Browser's choice | Can't be blocked on iOS | Blocked (`FLAG_SECURE`) | Not blocked |
+| Reference | [Web](/developers/sdks/web/) | [iOS](/developers/sdks/ios/) | [Android](/developers/sdks/android/) | [React Native](/developers/sdks/react-native/) |
+
+The end-to-end flow (server mints, client collects, server stores the token) is in [Collect and reveal in the front end](/developers/recipes/collect-and-reveal/).
+
+<Callout type="info">
+All SDKs are open source under **Apache-2.0**, so you can ship them inside your own apps, closed source or not.
+
+**Early access.** The Node.js and React Native SDKs are on npm (`@onshorehq/sdk`, `@onshorehq/react-native`). Go and iOS install straight from GitHub. Python, Java, PHP and Android aren't on their registries (PyPI, Maven Central, Packagist) yet; each page shows how to install from its GitHub repository until they are. The mobile SDKs haven't run on a physical device yet.
+</Callout>
+
+## Something not covered?
+
+Every endpoint is in the [API reference](/api-reference/), with a client to try it. Calling the API directly means signing assertions yourself; [Authentication](/developers/authentication/) shows how in any language.

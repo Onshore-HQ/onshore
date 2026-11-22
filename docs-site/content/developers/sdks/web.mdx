@@ -1,0 +1,308 @@
+---
+title: Web (rv.js)
+description: Complete reference for rv.js, the browser script for secure collect and reveal frames. Options, methods, events, theming, errors, and React, Vue and plain HTML examples.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Web: rv.js
+
+`rv.js` puts a small form or a revealed value on your page inside a frame served by **your vault**, from its own origin. What a person types, and what's revealed, never pass through your page's JavaScript, your servers or your logs. Your page gets tokens back, or only the reveal's decision.
+
+| | |
+| --- | --- |
+| Served from | Your install: `https://<your-host>/embed/rv.js`. There's no npm package; load it from the vault so it always matches the server |
+| Size | About 3 KB, no dependencies |
+| Browsers | Current Chrome, Edge, Firefox and Safari |
+| Global | `window.Onshore` |
+| Credentials in the browser | None. Each frame uses a single-use **client token** your server mints |
+
+## Before you start
+
+1. In the console, open **Vaults → your vault → Secure components** and add every site that will show a frame, as an origin: `https://app.yourbank.example`. Only listed origins can frame the vault, and client tokens are tied to one of them.
+2. Give the service account that mints client tokens an access rule allowing `tokenize` (for collect) or `detokenize` (for reveal) on the fields involved.
+3. Your server mints client tokens with [`createClientToken`](/developers/sdks/node/#createclienttoken) in any SDK.
+
+## Load the script
+
+```html
+<script src="https://vault.yourbank.example/embed/rv.js"></script>
+```
+
+The script works out the vault's address from its own `src`. If you bundle or self-host it (not recommended), pass `baseUrl` to each component.
+
+Content Security Policy on your page needs:
+
+```
+script-src 'self' https://vault.yourbank.example;
+frame-src https://vault.yourbank.example;
+```
+
+## Collect
+
+<Steps>
+
+### Your server mints a collect token
+
+```ts
+// POST /api/id-form, for a signed-in customer
+const { client_token } = await vault.createClientToken(VAULT, {
+  kind: "collect",
+  origin: "https://app.yourbank.example",
+  fields: ["national_id", "iban"],      // up to 10
+  subjectRef: user.customerId,
+  bindIp: req.ip,
+  ttlSeconds: 300,
+});
+res.json({ clientToken: client_token });
+```
+
+### Your page mounts the form
+
+```html
+<div id="id-form"></div>
+<button id="save" disabled>Save</button>
+
+<script>
+  const { clientToken } = await (await fetch("/api/id-form", { method: "POST" })).json();
+
+  const form = Onshore.collect({
+    vault: "v_live_gb01",
+    clientToken,
+    labels: { national_id: "National Insurance number", iban: "Bank account (IBAN)" },
+    theme: { accent: "#2574de", radius: "8px", font: "mono" },
+  });
+
+  form.on("change", (e) => { save.disabled = !e.complete; });
+  form.on("enter", () => save.click());
+  form.mount("#id-form");
+</script>
+```
+
+### Submit and keep the tokens
+
+```js
+save.onclick = async () => {
+  save.disabled = true;
+  try {
+    const tokens = await form.submit();   // { national_id: "tok_uk_nino_…", iban: "tok_iban_…" }
+    await fetch("/api/profile/ids", { method: "POST", body: JSON.stringify(tokens) });
+    form.unmount();
+  } catch (err) {
+    if (err.message === "validation_failed") {
+      // The frame already shows what to fix. err.fields names the fields, never their contents.
+      save.disabled = false;
+    } else if (err.message === "invalid_client_token") {
+      // Expired or used: fetch a new token and mount again
+    } else {
+      showError("Couldn't save. Try again.");
+    }
+  }
+};
+```
+
+</Steps>
+
+A format mistake is shown inside the frame and **doesn't use up the token**, so the person can correct it and submit again. The token is spent only by a successful submit.
+
+## Reveal
+
+```ts
+// Server: check this agent may see this customer first. Then:
+const { client_token } = await vault.createClientToken(VAULT, {
+  kind: "reveal",
+  origin: "https://support.yourbank.example",
+  tokens: [customer.nino_token, customer.iban_token],   // up to 20
+  purpose: `Ticket ${ticket.id}`,
+  onBehalfOf: agent.email,
+  bindIp: req.ip,
+});
+```
+
+```js
+const shown = Onshore.reveal({
+  vault: "v_live_gb01",
+  clientToken,
+  labels: { 0: "NI number", 1: "IBAN" },   // keyed by position in `tokens`
+  hideAfter: 60,                           // seconds; 30 by default, 300 at most
+});
+shown.on("revealed", (e) => audit(e.decisions)); // e.g. ["plaintext", "masked"]; never the values
+shown.on("hidden", () => shown.unmount());
+shown.mount("#customer-ids");
+```
+
+Values appear only inside the frame and disappear after `hideAfter` seconds. Each is decided by the access rules for the minting service account, checked again when the frame redeems the token, against the **browser's** IP address.
+
+<Callout type="warning">
+Your server is responsible for checking that this person may see this record before minting a reveal token. The service account usually has far wider access than any one agent. Record who asked in `onBehalfOf`; it appears in the audit log.
+</Callout>
+
+## Reference
+
+### Onshore.collect(options) / Onshore.reveal(options)
+
+Both return a component. Neither touches the page until `mount`.
+
+| Option | Type | Collect | Reveal | Meaning |
+| --- | --- | --- | --- | --- |
+| `vault` | `string` | required | required | The vault ID |
+| `clientToken` | `string` | required | required | From your server. Sent to the frame by `postMessage`, never in a URL, so it stays out of logs and history |
+| `labels` | `object` | optional | optional | Collect: keyed by field name. Reveal: keyed by position (`0`, `1`, …). Defaults to the field name |
+| `theme` | `object` | optional | optional | See [Theme](#theme) |
+| `height` | `number` | optional | optional | Starting height in pixels (default 60). The frame then resizes itself to fit its content |
+| `hideAfter` | `number` | | optional | Seconds before values hide: 1 to 300, default 30 |
+| `baseUrl` | `string` | optional | optional | The vault's address, only when `rv.js` isn't loaded from the vault |
+
+Throws at once if `vault` or `clientToken` is missing.
+
+### Methods
+
+| Method | Returns | Meaning |
+| --- | --- | --- |
+| `mount(target)` | the component | `target` is a selector or an element. Adds the frame. Throws if the target isn't found |
+| `on(event, handler)` | the component | Adds an event handler. Chainable |
+| `submit()` | `Promise<Record<string, string>>` | Collect only. Resolves with a token per field. Rejects with `Error("validation_failed")` and `err.fields`, `Error(code)` for other failures, `Error("not mounted")` or `Error("already submitting")` |
+| `unmount()` | | Removes the frame and its listener. Call it when the form or value is no longer needed |
+
+### Events
+
+| Event | Component | Data | When |
+| --- | --- | --- | --- |
+| `ready` | Collect | | The fields are showing |
+| `change` | Collect | `complete`: every field has something in it | Each keystroke. Never carries what was typed |
+| `enter` | Collect | | The person pressed Enter in a field |
+| `invalid` | Collect | `fields`: names to correct | A submit failed a format check |
+| `complete` | Collect | `tokens` | A submit succeeded (the same tokens `submit()` resolves with) |
+| `revealed` | Reveal | `decisions`: one per token | Values are showing |
+| `hidden` | Reveal | | `hideAfter` passed and the values were removed |
+| `error` | Both | `code` | The frame couldn't continue, for example `invalid_client_token` |
+
+Messages are accepted only from the frame's window and the vault's origin.
+
+### Theme
+
+Free-form CSS isn't accepted, because CSS can be used to read what's typed (attribute selectors with background images). Instead there's a short list of checked values:
+
+| Key | Accepts | Sets |
+| --- | --- | --- |
+| `color` | A colour: hex (`#rgb` to `#rrggbbaa`), `rgb()`/`rgba()`, or a name such as `navy` | Text |
+| `muted` | A colour | Labels and hints |
+| `background` | A colour | Frame background |
+| `inputBackground` | A colour | Inside the fields |
+| `border` | A colour | Field borders |
+| `accent` | A colour | Focus ring |
+| `error` | A colour | Error text and borders |
+| `radius` | `0px` to `99px` | Field corner radius |
+| `fontSize` | `0px` to `99px` | Text size |
+| `font` | `"serif"` or `"mono"` | Typeface (sans-serif by default) |
+
+Anything that doesn't match is ignored silently.
+
+```js
+// Match a dark page
+Onshore.collect({ vault, clientToken, theme: {
+  color: "#e8eaf0", muted: "#9aa3b2", background: "#0f1115",
+  inputBackground: "#171a21", border: "#2a2f3a", accent: "#5aa2ff", radius: "10px",
+}});
+```
+
+### Errors
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `validation_failed` | A value fails its field's format check | Nothing: the frame shows it. The token still works |
+| `invalid_client_token` | Unknown, expired, already used, or minted for another origin | Mint a new token and mount again |
+| `policy_denied` | No access rule allows this, for example an approved-network rule that doesn't include the browser's IP | Check the rule; don't retry |
+| `forbidden` / `origin_not_allowed` | The page's origin isn't listed under Secure components | Add it in the console |
+| `rate_limited` | Too many attempts from this address | Wait |
+
+## Framework examples
+
+<Tabs items={["React", "Vue", "Plain HTML"]}>
+<Tabs.Tab>
+```tsx
+import { useEffect, useRef } from "react";
+
+declare global { interface Window { Onshore: any } }
+
+export function SecureIdForm({ clientToken, onTokens }: { clientToken: string; onTokens: (t: Record<string, string>) => void }) {
+  const host = useRef<HTMLDivElement>(null);
+  const form = useRef<any>(null);
+
+  useEffect(() => {
+    form.current = window.Onshore.collect({
+      vault: "v_live_gb01", clientToken, labels: { national_id: "Your NI number" },
+    }).mount(host.current!);
+    return () => form.current?.unmount();
+  }, [clientToken]);
+
+  return (
+    <>
+      <div ref={host} />
+      <button onClick={async () => onTokens(await form.current.submit())}>Save</button>
+    </>
+  );
+}
+```
+Add `<script src="https://vault.yourbank.example/embed/rv.js" />` to your document head (in Next.js, `next/script` with `strategy="beforeInteractive"`).
+</Tabs.Tab>
+<Tabs.Tab>
+```vue
+<script setup>
+import { onMounted, onBeforeUnmount, ref } from "vue";
+const props = defineProps({ clientToken: String });
+const emit = defineEmits(["tokens"]);
+const host = ref(null);
+let form;
+
+onMounted(() => {
+  form = window.Onshore.collect({ vault: "v_live_gb01", clientToken: props.clientToken }).mount(host.value);
+});
+onBeforeUnmount(() => form?.unmount());
+const save = async () => emit("tokens", await form.submit());
+</script>
+
+<template>
+  <div ref="host" />
+  <button @click="save">Save</button>
+</template>
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```html
+<!doctype html>
+<script src="https://vault.yourbank.example/embed/rv.js"></script>
+<form id="f">
+  <div id="secure"></div>
+  <button>Save</button>
+</form>
+<script>
+  fetch("/api/id-form", { method: "POST" }).then((r) => r.json()).then(({ clientToken }) => {
+    const c = Onshore.collect({ vault: "v_live_gb01", clientToken }).mount("#secure");
+    document.getElementById("f").onsubmit = async (e) => {
+      e.preventDefault();
+      const tokens = await c.submit();
+      await fetch("/api/save", { method: "POST", body: JSON.stringify(tokens) });
+    };
+  });
+</script>
+```
+</Tabs.Tab>
+</Tabs>
+
+## Security model
+
+- The frame is served from the vault's origin, so the browser's same-origin policy stops your page, and any script on it, from reading inside.
+- The frame is sandboxed (`allow-scripts allow-same-origin`, no top navigation, no popups), sends no referrer, and its own Content Security Policy allows only its own script and stylesheet.
+- The vault's `frame-ancestors` policy lists only the origins under Secure components, so another site can't frame it.
+- Client tokens are single use, short-lived (2 minutes by default, 10 at most), tied to one origin, optionally tied to one IP, and name exactly which fields or tokens they cover.
+- Access rules are checked when the token is minted **and** when it's redeemed.
+- Card numbers are refused by the vault everywhere, including here.
+
+## Watching the page's scripts
+
+The same install serves `rv-watch.js`, which reports which scripts load on a page (addresses without query strings; no form fields, cookies or page text) for [page protection](/guides/connections/page-protection/):
+
+```html
+<script src="https://vault.yourbank.example/embed/rv-watch.js" data-page="pg_checkout_01" async></script>
+```

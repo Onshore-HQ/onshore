@@ -13,7 +13,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
-demo/.state/
+/demo/.state/
 deploy/compose/certs/*
 !deploy/compose/certs/.gitkeep
 deploy/compose/internal-tls/
@@ -30,13 +30,13 @@ e2e-load.env
 licence.e2e
 
 # The website is its own repository
-website/
+/website/
 
 # Pitch, research, AI notes and planning specs (not part of the product)
-pitch/
-research_notes/
-reports/
-.backups/
+/pitch/
+/research_notes/
+/reports/
+/.backups/
 CLAUDE.md
 AGENTS.md
 .claude/
@@ -46,4 +46,4 @@ Residency Vault — Full Build Spec.md
 Residency Vault — Update Spec 01 Custom Detection Entities.md
 
 # SDKs live in their own repositories (Onshore-HQ/onshore-<language>)
-sdks/
+/sdks/

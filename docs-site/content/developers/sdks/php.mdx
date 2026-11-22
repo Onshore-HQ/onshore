@@ -1,0 +1,287 @@
+---
+title: PHP SDK
+description: Complete reference for the Onshore PHP client. Every method, with Laravel and Symfony examples, retries, errors and webhook checks.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# PHP SDK
+
+`Onshore\VaultClient` is the server SDK for PHP. It covers the whole [data API](/api-reference/) with two standard extensions and nothing else.
+
+| | |
+| --- | --- |
+| Package | `onshorehq/sdk` |
+| Source | [github.com/Onshore-HQ/onshore-php](https://github.com/Onshore-HQ/onshore-php) |
+| PHP | 8.1 or later, with the `sodium` and `curl` extensions (both ship with PHP) |
+| Dependencies | None |
+| Results | Associative arrays decoded from JSON |
+| Long-running workers | The bearer token is cached on the object. In PHP-FPM, one client per request is fine; in Octane, RoadRunner or queue workers, reuse one client to save a token exchange per job |
+
+## Install
+
+Until it's on Packagist, add the repository to your `composer.json`:
+
+```json filename="composer.json"
+"repositories": [{ "type": "vcs", "url": "https://github.com/Onshore-HQ/onshore-php" }]
+```
+
+then:
+
+```sh
+composer require onshorehq/sdk:^0.1
+```
+
+## Create a client
+
+```php
+use Onshore\VaultClient;
+
+$vault = new VaultClient(
+    getenv('ONSHORE_URL'),          // https://vault.yourbank.example
+    getenv('ONSHORE_SA_ID'),        // sa_…
+    getenv('ONSHORE_KEY_ID'),       // key_…
+    getenv('ONSHORE_PRIVATE_KEY'),  // base64 Ed25519 seed
+);
+const VAULT = 'v_live_gb01';
+```
+
+### Constructor
+
+```php
+new VaultClient(string $baseUrl, string $serviceAccountId, string $keyId, string $seedB64, int $maxAttempts = 4, array $curlOptions = [])
+```
+
+An invalid key throws `InvalidArgumentException` at once. `$curlOptions` are added to every request, for a private CA, a proxy or a client certificate:
+
+```php
+$vault = new VaultClient($url, $sa, $key, $seed, 3, [
+    CURLOPT_CAINFO => '/etc/ssl/yourbank-ca.pem',
+    CURLOPT_PROXY => 'http://proxy.internal:3128',
+    CURLOPT_TIMEOUT => 5,
+]);
+```
+
+<Tabs items={["Laravel", "Symfony"]}>
+<Tabs.Tab>
+```php filename="app/Providers/AppServiceProvider.php"
+public function register(): void
+{
+    $this->app->singleton(VaultClient::class, fn () => new VaultClient(
+        config('services.onshore.url'), config('services.onshore.sa_id'),
+        config('services.onshore.key_id'), config('services.onshore.private_key'),
+    ));
+}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```yaml filename="config/services.yaml"
+services:
+  Onshore\VaultClient:
+    arguments:
+      $baseUrl: '%env(ONSHORE_URL)%'
+      $serviceAccountId: '%env(ONSHORE_SA_ID)%'
+      $keyId: '%env(ONSHORE_KEY_ID)%'
+      $seedB64: '%env(ONSHORE_PRIVATE_KEY)%'
+```
+</Tabs.Tab>
+</Tabs>
+
+## How the client works
+
+- **Authentication.** Signs a two-minute EdDSA assertion with sodium and exchanges it for a 15-minute bearer token, refreshed when under 60 seconds remain. A **401** drops the token and throws.
+- **Batching.** `tokenize` and `detokenize` send 500 per request; `index` is the position in your array.
+- **Retries.** curl failures, **429** and **5xx** are retried with growing, jittered waits (about 100 ms up to 2 s) until `$maxAttempts`. Requests time out after 10 seconds unless you set `CURLOPT_TIMEOUT`.
+- **Failing closed.** Reveals never return a token as if it were the value.
+- **Purposes in headers** have line breaks replaced by spaces, since HTTP headers can't hold them.
+
+## Errors
+
+Every failure throws `Onshore\VaultError`:
+
+| Property | Meaning |
+| --- | --- |
+| `$status` | HTTP status; `0` when there was no answer |
+| `$errorCode` | `invalid_request`, `unauthenticated`, `policy_denied`, `token_not_found`, `not_found`, `duplicate_value`, `too_large`, `validation_failed`, `rate_limited`, `key_service_unavailable`, `detection_not_ready`, `network_error` |
+| `$policy` | The access rule that refused, if any |
+| `$requestId` | For support and the audit log |
+
+`getMessage()` never contains a stored value. (`$errorCode` is named so because `getCode()` belongs to PHP's `Exception`.)
+
+```php
+use Onshore\VaultError;
+
+try {
+    $token = $vault->lookup(VAULT, 'national_id', $submitted);
+} catch (VaultError $e) {
+    if ($e->errorCode === 'token_not_found') {
+        return null;
+    }
+    report($e);   // logs code and request ID, never a value
+    throw $e;
+}
+```
+
+## Methods
+
+### tokenize
+
+```php
+tokenize(string $vault, array $items, bool $continueOnError = false, bool $dryRun = false): array
+```
+
+Each item is `['field' => …, 'value' => …, 'subject_ref' => …]`. Each result is `['index' => int, 'token' => string, 'existing' => bool]`, or `['index' => int, 'error' => ['code' => …, 'message' => …]]` with `$continueOnError`.
+
+```php
+$results = $vault->tokenize(VAULT, [
+    ['field' => 'national_id', 'value' => 'AB123456C', 'subject_ref' => 'cust_1042'],
+    ['field' => 'phone', 'value' => '07700 900123', 'subject_ref' => 'cust_1042'],
+]);
+$customer->update(['nino_token' => $results[0]['token'], 'phone_token' => $results[1]['token']]);
+
+// Check an upload first; nothing is stored
+$problems = array_filter($vault->tokenize(VAULT, $items, true, true), fn ($r) => isset($r['error']));
+```
+
+### detokenize
+
+```php
+detokenize(string $vault, array $tokens, string $purpose, bool $continueOnError = false): array
+```
+
+Each item is a token string or `['token' => …, 'redaction' => 'masked' | 'token_only']`. Each result has `decision` (`plaintext`, `masked`, `token_only`, `denied`), `value` (absent when denied) and `policy`.
+
+```php
+[$nino, $phone] = $vault->detokenize(VAULT, [
+    ['token' => $c->nino_token, 'redaction' => 'masked'],
+    $c->phone_token,
+], "Ticket {$ticket->id}");
+
+$shownPhone = $phone['decision'] === 'denied' ? null : $phone['value'];
+```
+
+### insertRecord, getRecord, updateValue
+
+```php
+insertRecord(string $vault, array $fields, ?string $subjectRef = null): array   // ['id' => …, 'tokens' => [...]]
+getRecord(string $vault, string $id, string $purpose): array                     // ['field' => ['decision' => …, 'value' => …]]
+updateValue(string $vault, string $token, string $value): void                   // cell tokens only
+```
+
+```php
+$rec = $vault->insertRecord(VAULT, ['full_name' => 'Samuel Adeyemi', 'national_id' => 'AB123456C'], 'cust_1042');
+$fields = $vault->getRecord(VAULT, $rec['id'], "KYC review $caseId");
+$vault->updateValue(VAULT, $c->address_token, '14 Harbour Street, Leith, EH6 6JJ');
+```
+
+### lookup
+
+```php
+lookup(string $vault, string $field, string $value): string
+```
+
+Throws `token_not_found` when there's no match. Deterministic or searchable fields; 60 a minute per caller.
+
+### People
+
+```php
+searchSubjects(string $vault, array $query = []): array      // ['subjects' => [...], 'total' => int]
+getSubject(string $vault, string $subjectId): array          // summary + 'fields', masked at most
+exportSubject(string $vault, string $subjectId, string $purpose): array
+restrictSubject(string $vault, string $subjectId, bool $restricted, string $purpose): bool
+eraseSubject(string $vault, string $subjectId, string $purpose): int
+```
+
+Query keys: `query`, `field_type`, `has_reveals`, `flagged`, `created_after`, `created_before`, `sort`, `dir`, `limit` (1 to 200), `offset`.
+
+```php
+$person = $vault->searchSubjects(VAULT, ['query' => 'cust_1042'])['subjects'][0] ?? null;
+$rows = $vault->exportSubject(VAULT, $person['id'], "DSAR {$request->reference}");
+$erased = $vault->eraseSubject(VAULT, $person['id'], "Erasure {$request->reference}");
+```
+
+### residentCheck
+
+```php
+residentCheck(string $vault, string $token, string $check, string $arg, string $purpose): bool
+```
+
+```php
+if (!$vault->residentCheck(VAULT, $c->dob_token, 'age_at_least', '18', 'Card eligibility')) {
+    abort(403, 'Applicants must be 18 or over');
+}
+```
+
+### detect
+
+```php
+detect(string $text, ?string $vault = null, bool $tokenize = false, ?array $entities = null, bool $includeShadow = false): array
+```
+
+Returns `['entities' => [...], 'ruleset_version' => int, 'text' => string]`. Offsets are byte offsets, so `substr($text, $e['start'], $e['end'] - $e['start'])` is exact.
+
+```php
+$clean = $vault->detect($ticket->body, VAULT, tokenize: true)['text'];
+```
+
+### checkFlow
+
+```php
+checkFlow(string $vault, string $flow, string $text): array   // identifiers, tokens, clean, by_type
+```
+
+### createClientToken
+
+```php
+createClientToken(string $vault, array $request): array   // ['client_token' => …, 'expires_at' => …]
+```
+
+Keys: `kind`, `origin`, `fields`, `tokens`, `purpose`, `on_behalf_of`, `subject_ref`, `bind_ip`, `ttl_seconds`.
+
+```php
+Route::post('/api/id-form', function (Request $request, VaultClient $vault) {
+    $t = $vault->createClientToken(VAULT, [
+        'kind' => 'collect', 'origin' => 'https://app.yourbank.example',
+        'fields' => ['national_id'], 'subject_ref' => $request->user()->customer_id,
+        'bind_ip' => $request->ip(),
+    ]);
+    return ['clientToken' => $t['client_token']];
+})->middleware('auth');
+```
+
+### cloak, uncloak, deleteTwin
+
+```php
+cloak(string $vault, string $text, ?string $profileId = null, ?array $options = null, int $keepDays = 0): array
+uncloak(string $vault, string $twinId, string $text, string $purpose): array   // ['text' => …, 'decisions' => [...]]
+deleteTwin(string $vault, string $twinId): void
+```
+
+```php
+$c = $vault->cloak(VAULT, $message, options: ['person_name' => 'synthetic', 'amount' => 'band'], keepDays: 1);
+$reply = $llm->complete($c['text']);
+$answer = $vault->uncloak(VAULT, $c['id'], $reply, "Chat $chatId")['text'];
+$vault->deleteTwin(VAULT, $c['id']);
+```
+
+### verifyWebhook
+
+```php
+VaultClient::verifyWebhook(string $secret, string $rawBody, string $signatureHeader, int $toleranceSeconds = 300): bool
+```
+
+```php
+Route::post('/hooks/onshore', function (Request $request) {
+    if (!VaultClient::verifyWebhook(config('services.onshore.webhook_secret'), $request->getContent(), $request->header('X-Rv-Signature', ''))) {
+        abort(401);
+    }
+    HandleOnshoreEvent::dispatch($request->json()->all());
+    return response()->noContent();
+});
+```
+
+Exclude the route from CSRF protection.
+
+## Testing your code
+
+Wrap the client behind your own interface and fake that in unit tests. For integration tests use a `v_test_` vault and [made-up values](/developers/recipes/test-safely/).

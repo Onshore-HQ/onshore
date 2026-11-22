@@ -1,0 +1,567 @@
+---
+title: Python SDK
+description: Complete reference for the onshore Python package. Every method, parameter, return value and error, with examples for Django, FastAPI, Flask, batch jobs and tests.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Python SDK
+
+The `onshore` package is the server SDK for Python. It covers the whole [data API](/api-reference/): storing and revealing values, records, lookups, people and data subject requests, resident checks, detection, flow checks, client tokens, cloaking for AI, and webhook signatures.
+
+| | |
+| --- | --- |
+| Package | `onshore` |
+| Source | [github.com/Onshore-HQ/onshore-python](https://github.com/Onshore-HQ/onshore-python) |
+| Python | 3.9 or later |
+| Dependencies | `cryptography` (for Ed25519). HTTP uses the standard library's `urllib` |
+| Style | Synchronous. Calls block; in async code run them in a thread (see [asyncio](#asyncio)) |
+| Thread safety | Share one client across threads. Two threads may both refresh the token at the same moment, which is harmless |
+
+<Callout type="warning">
+Servers only. The client holds a service account's private key.
+</Callout>
+
+## Install
+
+```sh
+pip install "onshore @ git+https://github.com/Onshore-HQ/onshore-python@v0.1.0"
+```
+
+## Create a client
+
+```python filename="vault.py"
+import os
+from onshore import VaultClient
+
+vault = VaultClient(
+    os.environ["ONSHORE_URL"],          # https://vault.yourbank.example
+    os.environ["ONSHORE_SA_ID"],        # sa_…
+    os.environ["ONSHORE_KEY_ID"],       # key_…
+    os.environ["ONSHORE_PRIVATE_KEY"],  # base64 Ed25519 seed
+)
+VAULT = os.environ["ONSHORE_VAULT"]     # v_live_gb01
+```
+
+Where each value comes from is explained in [Authentication](/developers/authentication/). The service account needs an [access rule](/guides/access-rules/) for each action it uses.
+
+### Constructor
+
+```python
+VaultClient(base_url, service_account_id, key_id, private_key, *, max_attempts=4, timeout=10.0, ssl_context=None)
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `base_url` | required | Your install's address. A trailing slash is removed |
+| `service_account_id` | required | The account every call is audited under |
+| `key_id` | required | Which of the account's keys signs (sent as the JWT `kid`) |
+| `private_key` | required | The key's 32-byte Ed25519 seed, base64. An invalid key raises at once |
+| `max_attempts` | `4` | Attempts per call for retryable failures. `1` turns retries off |
+| `timeout` | `10.0` | Seconds per attempt |
+| `ssl_context` | system default | An `ssl.SSLContext`, to trust a private CA or present a client certificate |
+
+```python
+import ssl
+ctx = ssl.create_default_context(cafile="/etc/ssl/yourbank-ca.pem")
+vault = VaultClient(url, sa, key, secret, ssl_context=ctx, timeout=5.0)
+```
+
+For a proxy, set `HTTPS_PROXY`; `urllib` reads it.
+
+## How the client works
+
+- **Authentication.** The first call, and any call when the cached bearer token has under 60 seconds left, signs a two-minute EdDSA assertion (unique `jti`, `aud="onshore"`) and exchanges it at `POST /v1/auth/token` for a 15-minute token. A **401** clears the cached token and raises; the next call signs again.
+- **Batching.** `tokenize` and `detokenize` take any number of items and send them 500 at a time. Each result's `index` is its position in your list. Batches are separate requests: if a later batch fails, earlier ones are already stored.
+- **Retries.** Network errors, timeouts, **429** and **5xx** are retried with growing waits (about 0.2 s, 0.4 s, 0.8 s, up to 2 s, with random jitter) until `max_attempts`. Everything else raises at once.
+- **Failing closed.** Reveals never return a token as if it were a value. If the vault can't answer, the call raises.
+
+## Errors
+
+```python
+from onshore import VaultError
+
+try:
+    vault.detokenize(VAULT, [token], "Ticket 88213")
+except VaultError as e:
+    e.status      # 403; 0 means no answer
+    e.code        # "policy_denied": branch on this
+    e.message     # never contains a stored value
+    e.policy      # the rule that refused, if any
+    e.request_id  # for support and the audit log
+```
+
+| `status` | `code` | When | Retried |
+| --- | --- | --- | --- |
+| 0 | `network_error` | No answer. `message` is the exception's class name, such as `URLError` or `TimeoutError` | Yes |
+| 400 | `invalid_request` | Malformed request, missing purpose, unknown field, over 500 items | No |
+| 401 | `unauthenticated` | Bad or revoked key, expired or reused assertion | No |
+| 403 | `policy_denied` | No access rule allows it, or the IP isn't allowed | No |
+| 404 | `token_not_found` | Unknown, erased or expired token; no match for a lookup | No |
+| 404 | `invalid_request` / `not_found` | Unknown vault, record, person, flow / digital twin | No |
+| 409 | `duplicate_value` | Value already in a unique field | No |
+| 413 | `too_large` | Cloak text over 256 KB | No |
+| 422 | `validation_failed` | Value fails its format check | No |
+| 429 | `rate_limited` | Reveal limit or lookup limit (60 a minute) | Yes |
+| 503 | `key_service_unavailable` / `detection_not_ready` | Key service sealed / rules loading | Yes |
+
+## Methods
+
+| Method | Action needed | |
+| --- | --- | --- |
+| [`tokenize`](#tokenize) | `tokenize` | Store values, get tokens |
+| [`detokenize`](#detokenize) | `detokenize` | Reveal as rules allow |
+| [`insert_record`](#insert_record) | `insert` | Several fields for one person |
+| [`get_record`](#get_record) | `detokenize` | Read a record |
+| [`update_value`](#update_value) | `insert` | Change the value behind a token |
+| [`lookup`](#lookup) | `search` | Find a token by value |
+| [`search_subjects`](#search_subjects) | `search` | List people |
+| [`get_subject`](#get_subject) | `detokenize` | One person, masked |
+| [`export_subject`](#export_subject) | `export` | Access request export |
+| [`restrict_subject`](#restrict_subject) | `delete` | Stop a person's reveals |
+| [`erase_subject`](#erase_subject) | `delete` | Erase a person |
+| [`resident_check`](#resident_check) | `compare` | Yes-or-no question |
+| [`detect`](#detect) | `tokenize` when tokenizing | Find identifiers in text |
+| [`check_flow`](#check_flow) | | Report a batch's contents |
+| [`create_client_token`](#create_client_token) | `tokenize` / `detokenize` | Secure component token |
+| [`cloak`](#cloak) / [`uncloak`](#uncloak) / [`delete_twin`](#delete_twin) | `detokenize` for uncloak | AI cloaking |
+| [`verify_webhook`](#verify_webhook) | | Webhook signatures |
+
+Every method raises `VaultError`. Results are plain `dict`s and `list`s parsed from JSON.
+
+---
+
+### tokenize
+
+```python
+tokenize(vault, items, continue_on_error=False, dry_run=False) -> list[dict]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `items` | Iterable of `{"field": str, "value": str, "subject_ref": str (optional)}`. A generator works; it's read into a list |
+| `continue_on_error` | `False`: the first bad item fails the batch. `True`: each bad item gets `"error"` and the rest are stored |
+| `dry_run` | Check formats and rules, store nothing |
+
+Each result: `{"index": int, "token": str, "existing": bool}` or, with `continue_on_error`, `{"index": int, "error": {"code", "message"}}`. `existing` is `True` when a *same value, same token* field already held the value.
+
+```python
+results = vault.tokenize(VAULT, [
+    {"field": "national_id", "value": "AB123456C", "subject_ref": "cust_1042"},
+    {"field": "phone", "value": "07700 900123", "subject_ref": "cust_1042"},
+])
+nino_token, phone_token = (r["token"] for r in results)
+```
+
+A large import from a CSV, reporting bad rows without logging values:
+
+```python
+import csv
+
+with open("customers.csv", newline="") as f:
+    rows = list(csv.DictReader(f))
+
+results = vault.tokenize(
+    VAULT,
+    ({"field": "national_id", "value": r["nino"], "subject_ref": r["customer_id"]} for r in rows),
+    continue_on_error=True,
+)
+for r in results:
+    if "error" in r:
+        log.warning("row %d: %s", r["index"], r["error"]["code"], extra={"customer": rows[r["index"]]["customer_id"]})
+    else:
+        db.save_token(rows[r["index"]]["customer_id"], r["token"])
+```
+
+Check a file first, store nothing:
+
+```python
+problems = [r for r in vault.tokenize(VAULT, items, continue_on_error=True, dry_run=True) if "error" in r]
+```
+
+**Errors:** `invalid_request`, `validation_failed`, `duplicate_value`, `policy_denied`, `key_service_unavailable`. Card numbers are always refused. **REST:** `POST /v1/vaults/{vault}/tokenize`
+
+---
+
+### detokenize
+
+```python
+detokenize(vault, tokens, purpose, continue_on_error=False) -> list[dict]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `tokens` | Tokens as strings, or `{"token": str, "redaction": "masked" \| "token_only"}` to ask for less than the rules allow |
+| `purpose` | Why, up to 500 characters. Required. Recorded with every value |
+| `continue_on_error` | `True` answers the good tokens and gives bad ones an `"error"` |
+
+Each result: `{"index", "decision", "value", "policy"}`. `decision` is `plaintext`, `masked`, `token_only` or `denied`; `value` is absent when denied.
+
+```python
+nino, phone = vault.detokenize(VAULT, [c.nino_token, c.phone_token], f"Ticket {ticket.id}")
+show_nino = None if nino["decision"] == "denied" else nino["value"]
+
+# Masked on this screen, even for agents allowed more
+(r,) = vault.detokenize(VAULT, [{"token": c.nino_token, "redaction": "masked"}], "Account overview")
+```
+
+**Errors:** `invalid_request` (missing purpose), `token_not_found`, `policy_denied`, `rate_limited`, `key_service_unavailable`. A restricted person's tokens come back `denied`. **REST:** `POST /v1/vaults/{vault}/detokenize`
+
+---
+
+### insert_record
+
+```python
+insert_record(vault, fields: dict[str, str], subject_ref=None) -> {"id": str, "tokens": dict[str, str]}
+```
+
+```python
+rec = vault.insert_record(VAULT, {
+    "full_name": "Samuel Adeyemi",
+    "date_of_birth": "1988-03-14",
+    "national_id": "AB123456C",
+}, subject_ref="cust_1042")
+customer.onshore_record = rec["id"]
+customer.nino_token = rec["tokens"]["national_id"]
+```
+
+All fields are stored or none. **REST:** `POST /v1/vaults/{vault}/records`
+
+### get_record
+
+```python
+get_record(vault, record_id, purpose) -> dict[str, dict]
+```
+
+Every field, each decided by the rules: `{"full_name": {"decision": "plaintext", "value": "Samuel Adeyemi"}, …}`. The purpose is sent in the `X-RV-Purpose` header.
+
+```python
+fields = vault.get_record(VAULT, customer.onshore_record, f"KYC review {case_id}")
+```
+
+**REST:** `GET /v1/vaults/{vault}/records/{id}`
+
+### update_value
+
+```python
+update_value(vault, token, value) -> None
+```
+
+Changes the value behind a **new token each time** (cell) token, keeping the token. Deterministic tokens can't change; tokenize the new value instead.
+
+```python
+vault.update_value(VAULT, customer.address_token, "14 Harbour Street, Leith, EH6 6JJ")
+```
+
+**REST:** `PUT /v1/vaults/{vault}/tokens/{token}`
+
+---
+
+### lookup
+
+```python
+lookup(vault, field, value) -> str
+```
+
+Finds a token by value through a keyed hash, without decrypting. The field must be deterministic or searchable. Limited to 60 a minute per caller.
+
+```python
+from onshore import VaultError
+
+def existing_customer(nino: str):
+    try:
+        token = vault.lookup(VAULT, "national_id", nino)
+    except VaultError as e:
+        if e.code == "token_not_found":
+            return None
+        raise
+    return Customer.objects.filter(nino_token=token).first()
+```
+
+**REST:** `POST /v1/vaults/{vault}/lookup`
+
+---
+
+### search_subjects
+
+```python
+search_subjects(vault, query="", **filters) -> {"subjects": list[dict], "total": int}
+```
+
+`query` matches a token, your customer reference or an exact value. Filters: `field_type`, `has_reveals`, `flagged`, `created_after`, `created_before`, `sort` (`created_at`, `field_count`, `last_accessed`), `dir` (`asc`, `desc`), `limit` (1 to 200, default 50), `offset`. Each subject has `id`, `ref`, `field_count`, `created_at`, `last_accessed`, `reveals_30d`, `restricted`.
+
+```python
+person = vault.search_subjects(VAULT, "cust_1042")["subjects"][0]
+
+offset = 0
+while True:
+    page = vault.search_subjects(VAULT, field_type="iban", limit=200, offset=offset)
+    for s in page["subjects"]:
+        audit(s)
+    offset += 200
+    if offset >= page["total"]:
+        break
+```
+
+**REST:** `POST /v1/vaults/{vault}/subjects/search`
+
+### get_subject
+
+```python
+get_subject(vault, subject_id) -> dict
+```
+
+The person's summary plus `fields`: each `{"field", "data_type", "token", "masked", "decision", "record_id"}`, masked at most. Never a full value. **REST:** `GET /v1/vaults/{vault}/subjects/{id}`
+
+### export_subject
+
+```python
+export_subject(vault, subject_id, purpose) -> list[dict]
+```
+
+Rows of `{"field", "data_type", "value", "token", "decision"}` for an access request, with values as the rules allow. Needs the `export` action.
+
+```python
+rows = vault.export_subject(VAULT, person["id"], f"DSAR {request.reference}")
+```
+
+**REST:** `GET /v1/vaults/{vault}/subjects/{id}/export`
+
+### restrict_subject
+
+```python
+restrict_subject(vault, subject_id, restricted: bool, purpose) -> bool
+```
+
+While restricted, nothing about the person reveals. Returns the new state. **REST:** `POST /v1/vaults/{vault}/subjects/{id}/restrict`
+
+### erase_subject
+
+```python
+erase_subject(vault, subject_id, purpose) -> {"erased_records": int, "request_id": str}
+```
+
+Erases everything held on the person; their tokens stop working. Can't be undone. **REST:** `DELETE /v1/vaults/{vault}/subjects/{id}`
+
+A complete data subject request flow is in [Data subject requests](/developers/recipes/data-subject-requests/).
+
+---
+
+### resident_check
+
+```python
+resident_check(vault, token, check, arg, purpose) -> bool
+```
+
+| `check` | Field | `arg` | `True` when |
+| --- | --- | --- | --- |
+| `equals` | any | a value | equal after normalising |
+| `name_match` | `person_name` | a name | same name parts, any order |
+| `age_at_least` | `date` | years, `"0"`–`"150"` | at least that old today |
+| `amount_at_least` | `amount` | a number | at least that; `£1,250.50` and `1.250,50 €` both read as 1250.5 |
+
+```python
+if not vault.resident_check(VAULT, c.dob_token, "age_at_least", "18", "Card eligibility"):
+    raise NotEligible()
+```
+
+Needs `compare`; shares the 60-a-minute lookup limit. **REST:** `POST /v1/vaults/{vault}/resident/check`
+
+---
+
+### detect
+
+```python
+detect(text, tokenize=False, vault=None, entities=None, include_shadow=False) -> dict
+```
+
+Returns `{"entities": [{"type", "start", "end", "score", "custom", ...}], "ruleset_version": int, "text": str}`. `text` is present only with `tokenize=True`, which needs `vault`. Offsets are **byte** offsets into the UTF-8 text: slice `text.encode()[e["start"]:e["end"]]`.
+
+```python
+msg = "Refund to GB82 WEST 1234 5698 7654 32. My NI number is AB 12 34 56 C"
+found = vault.detect(msg, vault=VAULT)["entities"]
+safe = vault.detect(msg, vault=VAULT, tokenize=True)["text"]
+only_ids = vault.detect(msg, vault=VAULT, entities=["uk_nino"])
+```
+
+Text up to 1 MiB. **REST:** `POST /v1/detect`
+
+### check_flow
+
+```python
+check_flow(vault, flow, text) -> {"identifiers": int, "tokens": int, "clean": bool, "by_type": dict}
+```
+
+Send a sample of a batch before a job copies it somewhere Onshore can't sit in the path. Only counts are kept.
+
+```python
+sample = "\n".join(json.dumps(r) for r in batch[:500])
+report = vault.check_flow(VAULT, "flow_nightly_bq", sample)
+if not report["clean"]:
+    raise RuntimeError(f"blocked: {report['by_type']}")
+```
+
+**REST:** `POST /v1/vaults/{vault}/flows/{flow}/check`
+
+### create_client_token
+
+```python
+create_client_token(vault, kind, origin, fields=None, tokens=None, purpose="", on_behalf_of="", subject_ref="", bind_ip="", ttl_seconds=0)
+    -> {"client_token": str, "expires_at": str}
+```
+
+`kind` is `"collect"` (with up to 10 `fields`) or `"reveal"` (with up to 20 `tokens` and a `purpose`). `origin` must be listed under the vault's secure components. `ttl_seconds` of `0` means the default of 120; at most 600.
+
+<Tabs items={["Django", "FastAPI", "Flask"]}>
+<Tabs.Tab>
+```python
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+
+@login_required
+def id_form_token(request):
+    t = vault.create_client_token(
+        VAULT, "collect", "https://app.yourbank.example",
+        fields=["national_id"], subject_ref=request.user.customer_id,
+        bind_ip=request.META["REMOTE_ADDR"],
+    )
+    return JsonResponse({"clientToken": t["client_token"]})
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+from fastapi import Depends, Request
+from fastapi.concurrency import run_in_threadpool
+
+@app.post("/api/id-form")
+async def id_form(request: Request, user=Depends(current_user)):
+    t = await run_in_threadpool(
+        vault.create_client_token, VAULT, "collect", "https://app.yourbank.example",
+        fields=["national_id"], subject_ref=user.customer_id, bind_ip=request.client.host,
+    )
+    return {"clientToken": t["client_token"]}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+@app.post("/api/reveal/<customer_id>")
+@login_required
+def reveal(customer_id):
+    customer = Customer.get(customer_id)
+    if not current_user.may_view(customer):   # your check, before minting
+        abort(403)
+    t = vault.create_client_token(
+        VAULT, "reveal", "https://support.yourbank.example",
+        tokens=[customer.nino_token], purpose=f"Ticket {request.args['ticket']}",
+        on_behalf_of=current_user.email, bind_ip=request.remote_addr,
+    )
+    return {"clientToken": t["client_token"]}
+```
+</Tabs.Tab>
+</Tabs>
+
+**REST:** `POST /v1/vaults/{vault}/client-tokens`
+
+---
+
+### cloak
+
+```python
+cloak(vault, text, profile_id=None, options=None, keep_days=0) -> {"text": str, "changed": dict, "id": str}
+```
+
+Cloaks text for an AI model. `options` maps data types to choices (`person_name`: `placeholder`, `synthetic`, `keep`; `amount`: `placeholder`, `band`, `keep`; `date`: `placeholder`, `age_band`, `year`, `keep`; `address`: `keep`, `state`, `region`, `placeholder`; phones, cards and country IDs: `placeholder`, `last4`; `email`: `placeholder`, `domain`). Use a saved setting with `profile_id` instead. `keep_days` keeps a digital twin for `uncloak` and returns its `id`.
+
+### uncloak
+
+```python
+uncloak(vault, twin_id, text, purpose) -> {"text": str, "decisions": dict}
+```
+
+### delete_twin
+
+```python
+delete_twin(vault, twin_id) -> dict
+```
+
+```python
+c = vault.cloak(VAULT, user_message, options={"person_name": "synthetic", "amount": "band"}, keep_days=1)
+reply = openai_client.responses.create(model=MODEL, input=c["text"]).output_text
+answer = vault.uncloak(VAULT, c["id"], reply, f"Chat {chat_id}")["text"]
+vault.delete_twin(VAULT, c["id"])
+```
+
+The full pattern, including streaming and tool calls, is in [Cloak text for AI](/developers/recipes/cloak-for-ai/).
+
+---
+
+### verify_webhook
+
+```python
+from onshore import verify_webhook
+verify_webhook(secret: str, raw_body: bytes, signature_header: str, tolerance_seconds=300, now=None) -> bool
+```
+
+Pass the raw body **bytes**, before JSON parsing.
+
+<Tabs items={["Django", "FastAPI", "Flask"]}>
+<Tabs.Tab>
+```python
+@csrf_exempt
+def onshore_hook(request):
+    if not verify_webhook(settings.ONSHORE_WEBHOOK_SECRET, request.body, request.headers.get("X-Rv-Signature", "")):
+        return HttpResponse(status=401)
+    handle.delay(json.loads(request.body))
+    return HttpResponse(status=204)
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+@app.post("/hooks/onshore", status_code=204)
+async def onshore_hook(request: Request):
+    body = await request.body()
+    if not verify_webhook(SECRET, body, request.headers.get("x-rv-signature", "")):
+        raise HTTPException(401)
+    await queue.put(json.loads(body))
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+@app.post("/hooks/onshore")
+def onshore_hook():
+    if not verify_webhook(SECRET, request.get_data(), request.headers.get("X-Rv-Signature", "")):
+        return "", 401
+    handle(request.get_json())
+    return "", 204
+```
+</Tabs.Tab>
+</Tabs>
+
+## asyncio
+
+The client is synchronous. In async code, run calls in a thread so they don't block the event loop:
+
+```python
+import asyncio
+
+tokens = await asyncio.to_thread(vault.tokenize, VAULT, items)
+```
+
+## Testing your code
+
+Use a `v_test_` vault in CI with made-up values from [Test safely](/developers/recipes/test-safely/). For unit tests without a vault, patch `urllib.request.urlopen` or wrap the client behind your own interface and fake that:
+
+```python
+from unittest.mock import MagicMock
+
+def test_masks_for_agents():
+    vault = MagicMock()
+    vault.detokenize.return_value = [{"index": 0, "decision": "masked", "value": "•• •• •• 56 C"}]
+    assert render_customer(vault, customer)["national_id"] == "•• •• •• 56 C"
+```
+
+## Next
+
+- [Task guides](/developers/recipes/)
+- [API reference](/api-reference/)
+- [Retries and errors](/developers/recipes/retries-and-errors/)

@@ -1,0 +1,875 @@
+---
+title: Node.js SDK
+description: Complete reference for @onshorehq/sdk. Every method, parameter, return value and error, with examples, plus how authentication, batching, retries and timeouts work inside the client.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Node.js SDK
+
+`@onshorehq/sdk` is the server SDK for Node.js and TypeScript. It covers the whole [data API](/api-reference/): storing values, revealing them, records, lookups, people and data subject requests, resident checks, detection, flow checks, client tokens for secure components, cloaking for AI, and webhook signatures.
+
+| | |
+| --- | --- |
+| Package | `@onshorehq/sdk` |
+| Source | [github.com/Onshore-HQ/onshore-node](https://github.com/Onshore-HQ/onshore-node) |
+| Runtime | Node.js 20 or later (uses the built-in `fetch`, `crypto` and `AbortSignal.timeout`) |
+| Dependencies | None at run time |
+| Module format | ES modules, with TypeScript types included |
+| Thread safety | One client can be shared across your whole process. It caches one bearer token and refreshes it as needed |
+
+<Callout type="warning">
+This SDK is for **servers only**. It holds a service account's private key. Never bundle it into a browser or mobile app; use [secure components](/developers/sdks/web/) there.
+</Callout>
+
+## Install
+
+```sh npm2yarn
+npm install @onshorehq/sdk
+```
+
+## Before you start
+
+You need four things from the console:
+
+| What | Where | Looks like |
+| --- | --- | --- |
+| Your install's address | The address you open the console on, without `/console` | `https://vault.yourbank.example` |
+| A vault ID | **Vaults**, in the vault's header | `v_live_gb01` (test vaults start `v_test_`) |
+| A key pair | `./rv sa-keygen` prints the public key and writes the private key (a base64 seed) | |
+| A service account ID and key ID | **People → Add a person or service account → Service account**, pasting the public key | `sa_01HV…`, `key_01HV…` |
+
+Onshore only ever holds the public key. Put it in your secret store (AWS Secrets Manager, Vault, Doppler, Kubernetes secrets), never in source control. See [Authentication](/developers/authentication/) for how keys, rotation and IP allowlists work.
+
+The service account also needs an **access rule** that allows what you call. A new service account can do nothing. See [Access rules](/guides/access-rules/).
+
+## Create a client
+
+```ts filename="vault.ts"
+import { VaultClient } from "@onshorehq/sdk";
+
+export const vault = new VaultClient({
+  baseUrl: process.env.ONSHORE_URL!,             // https://vault.yourbank.example
+  serviceAccountId: process.env.ONSHORE_SA_ID!,  // sa_…
+  keyId: process.env.ONSHORE_KEY_ID!,            // key_…
+  privateKey: process.env.ONSHORE_PRIVATE_KEY!,  // base64 Ed25519 seed
+});
+
+export const VAULT = process.env.ONSHORE_VAULT!; // v_live_gb01
+```
+
+Create one client when your process starts and reuse it. Creating a client per request works but signs a new assertion and fetches a new bearer token every time.
+
+### Options
+
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `baseUrl` | `string` | required | Your install's address. A trailing slash is removed. |
+| `serviceAccountId` | `string` | required | The service account the client acts as. Every call is audited under it. |
+| `keyId` | `string` | required | Which of the account's keys signs. Sent as `kid` so the vault knows which public key to check. |
+| `privateKey` | `string` | required | The key's 32-byte Ed25519 seed, base64. The constructor throws at once if it isn't a valid key, so a bad secret fails at start-up, not on the first call. |
+| `maxAttempts` | `number` | `4` | Attempts per call for retryable failures (see [Retries](#retries)). `1` turns retries off. |
+| `timeoutMs` | `number` | `10000` | Time limit for each attempt. A timed-out attempt counts as a network failure and is retried. |
+| `fetch` | `typeof fetch` | global `fetch` | Your own fetch: for a proxy, custom TLS (pinning a private CA), tracing, or tests. |
+
+### Custom TLS or a proxy
+
+Pass a `fetch` that uses an [undici](https://undici.nodejs.org) dispatcher:
+
+```ts
+import { Agent, ProxyAgent, fetch as undiciFetch } from "undici";
+import { readFileSync } from "node:fs";
+
+// Trust your own CA, for an install with a private certificate.
+const agent = new Agent({ connect: { ca: readFileSync("/etc/ssl/yourbank-ca.pem") } });
+// Or go through a corporate proxy:
+// const agent = new ProxyAgent("http://proxy.internal:3128");
+
+const vault = new VaultClient({
+  /* … */
+  fetch: (url, init) => undiciFetch(url, { ...init, dispatcher: agent }) as unknown as Promise<Response>,
+});
+```
+
+### High throughput (Node 26)
+
+<Callout type="warning">
+On Node 26, the global `fetch` opens one HTTP/2 connection per host and sends **one request at a time** over it. A process using the default is held to about 150 detokenize batches a second, however many calls you run at once. Our measurements: 153 batches/s with the default, 554 with undici over HTTP/1.1.
+</Callout>
+
+If one process makes many concurrent calls, pass an undici client with a connection pool:
+
+```ts
+import { Agent, fetch as undiciFetch } from "undici";
+
+const pool = new Agent({ connections: 32, keepAliveTimeout: 30_000 });
+const vault = new VaultClient({
+  /* … */
+  fetch: (url, init) => undiciFetch(url, { ...init, dispatcher: pool }) as unknown as Promise<Response>,
+});
+```
+
+## How the client works
+
+Knowing this saves debugging time.
+
+### Authentication
+
+You never handle tokens yourself. On the first call, and whenever the cached token has less than 60 seconds left, the client:
+
+1. Builds a JWT assertion: header `{"alg":"EdDSA","typ":"JWT","kid":"<keyId>"}`, claims `iss` and `sub` set to your service account, `aud: "onshore"`, a random `jti`, `iat` now and `exp` two minutes ahead.
+2. Signs it with your private key (Ed25519).
+3. Sends it to `POST /v1/auth/token` and caches the 15-minute bearer token it gets back.
+
+Each `jti` works once, so a stolen assertion can't be replayed. If two calls start at the same moment with no cached token, both may fetch a token; that's harmless.
+
+If the vault answers **401** to a normal call (the key was revoked, the account was disabled, or the token expired early because the clock is wrong), the client drops its cached token and throws. The **next** call signs a fresh assertion. It doesn't retry a 401 itself, so a revoked key fails fast instead of looping.
+
+### Batching
+
+`tokenize` and `detokenize` accept any number of items. The client sends them 500 at a time, one batch after another, and joins the results. Each result's `index` is its position in **your** array, not in the batch.
+
+<Callout type="warning">
+Batches are separate requests. If batch 3 of 4 fails, batches 1 and 2 are already stored and the call throws. Use `continueOnError: true` for large imports, or keep each call to 500 items when all-or-nothing matters to you.
+</Callout>
+
+### Retries
+
+Each call is retried, up to `maxAttempts` attempts in total, when:
+
+- the network fails or the attempt times out (the error has `status: 0`, `code: "network_error"`),
+- the vault answers **429** (a rate limit), or
+- the vault answers **5xx** (for example `503 key_service_unavailable` while the key service is sealed).
+
+Waits between attempts grow: about 200 ms, 400 ms, 800 ms, then up to 2 seconds, each shortened by a random 0 to 50% so many clients don't retry in step. Every other status (400, 401, 403, 404, 409, 413, 422) is thrown at once, because trying again wouldn't change the answer. When attempts run out, the last error is thrown.
+
+Retrying is safe for most calls. The exceptions are covered in [Retries and idempotency](/developers/recipes/retries-and-errors/).
+
+### Failing closed
+
+`detokenize`, `getRecord`, `uncloak` and `exportSubject` never hand back a token as if it were the value, and never return a value the access rules didn't allow. If the vault can't answer (the key service is down, the network is broken), the call **throws**. Your code should treat a thrown reveal as "no value", never fall back to something else.
+
+## Errors
+
+Every failure is a `VaultError`:
+
+```ts
+import { VaultError } from "@onshorehq/sdk";
+
+try {
+  await vault.detokenize(VAULT, [token], "Ticket 88213");
+} catch (e) {
+  if (e instanceof VaultError) {
+    e.status;     // 403. 0 means the request never got an answer
+    e.code;       // "policy_denied": branch on this
+    e.message;    // readable; never contains a stored value
+    e.policy;     // the access rule that refused, when there is one
+    e.requestId;  // quote this to support, or find it in the audit log
+  }
+  throw e;
+}
+```
+
+| `status` | `code` | When | Retried by the client |
+| --- | --- | --- | --- |
+| 0 | `network_error` | No answer: DNS, TLS, connection reset, timeout. `message` is the error's name, such as `TimeoutError` | Yes |
+| 400 | `invalid_request` | Malformed body, missing `purpose`, purpose over 500 characters, more than 500 items, unknown field, a check that doesn't suit the field | No |
+| 401 | `unauthenticated` | Bad signature, unknown or revoked key, expired assertion, reused `jti`, disabled account | No (the next call re-authenticates) |
+| 403 | `policy_denied` | No access rule allows this, or the caller's IP isn't on the key's allowlist. `policy` names the rule when one decided | No |
+| 404 | `token_not_found` | The token doesn't exist, was erased, or has expired (transient fields) | No |
+| 404 | `invalid_request` | Unknown vault, record, person or flow | No |
+| 404 | `not_found` | No such digital twin, or it has expired | No |
+| 409 | `duplicate_value` | The value is already in a field marked unique | No |
+| 413 | `too_large` | Cloak or uncloak text over 256 KB | No |
+| 422 | `validation_failed` | A value fails its field's format check, such as an invalid IBAN checksum | No |
+| 429 | `rate_limited` | A reveal limit, the lookup limit (60 a minute per caller), or a request limit | Yes |
+| 503 | `key_service_unavailable` | The key service is sealed or unreachable. Nothing was stored or decrypted | Yes |
+| 503 | `detection_not_ready` | The vault's detection rules are still loading after a restart | Yes |
+| 500 | `internal` | A bug. Report it with `requestId` | Yes |
+
+## Methods
+
+Every method is `async` and throws `VaultError`. `vault` is always the vault ID.
+
+| Method | What it does | Access rule action |
+| --- | --- | --- |
+| [`tokenize`](#tokenize) | Store values, get tokens | `tokenize` |
+| [`detokenize`](#detokenize) | Reveal values as rules allow | `detokenize` |
+| [`insertRecord`](#insertrecord) | Store several fields for one person | `insert` |
+| [`getRecord`](#getrecord) | Read a record's fields | `detokenize` |
+| [`updateValue`](#updatevalue) | Change the value behind a token | `insert` |
+| [`lookup`](#lookup) | Find a token by value | `search` |
+| [`searchSubjects`](#searchsubjects) | List and filter people | `search` |
+| [`getSubject`](#getsubject) | One person, masked | `detokenize` |
+| [`exportSubject`](#exportsubject) | Export a person's data | `export` |
+| [`restrictSubject`](#restrictsubject) | Stop or allow a person's reveals | `delete` |
+| [`eraseSubject`](#erasesubject) | Erase a person | `delete` |
+| [`residentCheck`](#residentcheck) | Yes-or-no question about a value | `compare` |
+| [`detect`](#detect) | Find identifiers in text | `tokenize` (when tokenizing) |
+| [`checkFlow`](#checkflow) | Report what a batch holds | none |
+| [`createClientToken`](#createclienttoken) | Token for a secure component | `tokenize` or `detokenize` |
+| [`cloak`](#cloak) | Cloak text for an AI model | none |
+| [`uncloak`](#uncloak) | Restore a cloaked reply | `detokenize` |
+| [`deleteTwin`](#deletetwin) | Delete a digital twin | none |
+| [`verifyWebhook`](#verifywebhook) | Check a webhook signature | not a call |
+
+---
+
+### tokenize
+
+```ts
+tokenize(vault: string, items: TokenizeItem[], opts?: { continueOnError?: boolean; dryRun?: boolean }): Promise<TokenizeResult[]>
+```
+
+Stores values and returns a token for each. Each value is checked against its field's data type first: an IBAN must pass its checksum, a UK National Insurance number its format, a date must be a date, and your own data types their pattern and check rule.
+
+**Parameters**
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `items[].field` | `string` | A field defined on the vault, such as `national_id`. Its data type, token kind and masking come from the vault's setup. |
+| `items[].value` | `string` | The value. Normalised before storing (spacing, case and separators per data type), so `ab 12 34 56 c` and `AB123456C` are the same value. |
+| `items[].subject_ref` | `string?` | Your own reference for the person, such as a customer ID. Groups their values so they can be found, exported and erased together. Use it whenever the value belongs to a person. |
+| `opts.continueOnError` | `boolean` | Default `false`: the first bad item fails the whole batch and nothing in it is stored. `true`: good items are stored and each bad item gets an `error`. |
+| `opts.dryRun` | `boolean` | Check formats and access rules, store nothing, return no tokens. For validating an import before running it. |
+
+**Returns** one result per item, in your order:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `index` | `number` | Position in your `items` array |
+| `token` | `string?` | The token, such as `tok_uk_nino_7Hq2xP9LmA4c`. Absent on error and in a dry run |
+| `existing` | `boolean?` | `true` when a *same value, same token* field already held this value and its existing token came back |
+| `error` | `{ code, message }?` | With `continueOnError`, why this item failed |
+
+What the token looks like depends on the field's **token kind**, set in the console:
+
+| Token kind | Same value twice gives | Use for |
+| --- | --- | --- |
+| Same value, same token (deterministic) | The same token, with `existing: true` | Values you join or search on: national IDs, emails, account numbers |
+| New token each time (cell) | A different token each time | Values that change or must not be linkable: addresses, notes |
+| Expiring (transient) | A new token that stops working after the field's time limit | One-off values, such as an ID number used only during onboarding |
+
+**Example: one person's values**
+
+```ts
+const results = await vault.tokenize(VAULT, [
+  { field: "national_id", value: "AB123456C", subject_ref: "cust_1042" },
+  { field: "phone", value: "07700 900123", subject_ref: "cust_1042" },
+  { field: "email", value: "sam@example.com", subject_ref: "cust_1042" },
+]);
+
+const [nino, phone, email] = results.map((r) => r.token!);
+await db.customers.update("cust_1042", { nino_token: nino, phone_token: phone, email_token: email });
+```
+
+**Example: a large import that keeps going past bad rows**
+
+```ts
+const rows = await loadCsv("customers.csv"); // 120,000 rows
+const results = await vault.tokenize(
+  VAULT,
+  rows.map((r) => ({ field: "national_id", value: r.nino, subject_ref: r.customer_id })),
+  { continueOnError: true },
+);
+
+const failed = results.filter((r) => r.error);
+for (const f of failed) {
+  // Never log the value. Log the row and the reason.
+  console.warn(`row ${f.index}: ${f.error!.code}`, { customer: rows[f.index].customer_id });
+}
+console.log(`${results.length - failed.length} stored, ${failed.length} need fixing`);
+```
+
+**Example: check a file before importing it**
+
+```ts
+const check = await vault.tokenize(VAULT, items, { dryRun: true, continueOnError: true });
+const bad = check.filter((r) => r.error);
+if (bad.length) throw new Error(`${bad.length} rows would fail; nothing was stored`);
+await vault.tokenize(VAULT, items);
+```
+
+**Errors:** `invalid_request` (unknown field, more than 500 in one request, empty value), `validation_failed` (format check), `duplicate_value` (unique field), `policy_denied`, `key_service_unavailable`. Card numbers are always refused with `validation_failed`: Onshore keeps cards out of the vault so it never falls under PCI DSS.
+
+**REST:** [`POST /v1/vaults/{vault}/tokenize`](/api-reference/#data-api/tag/tokens/POST/v1/vaults/{vault}/tokenize)
+
+---
+
+### detokenize
+
+```ts
+detokenize(vault: string, tokens: (string | DetokenizeItem)[], purpose: string, opts?: { continueOnError?: boolean }): Promise<DetokenizeResult[]>
+```
+
+Returns the values behind tokens, each as the caller's access rules allow: the full value, a masked one, the token itself, or nothing. Every item is recorded in the audit log with your purpose.
+
+**Parameters**
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `tokens` | `string[]` or `{ token, redaction? }[]` | The tokens. Mix plain strings and objects freely. |
+| `tokens[].redaction` | `"masked" \| "token_only"` | Ask for **less** than the rules allow, for example masked on a screen where the full value isn't needed. It can only narrow, never widen. |
+| `purpose` | `string` | Why you need the values: a ticket number, a job name, a case ID. Required, up to 500 characters. Shown in the audit log next to every value revealed. |
+| `opts.continueOnError` | `boolean` | Default `false`: an unknown token fails the whole call. `true`: each bad token gets an `error` and the rest are answered. |
+
+**Returns** one result per token, in your order:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `index` | `number` | Position in your `tokens` array |
+| `decision` | `"plaintext" \| "masked" \| "token_only" \| "denied"` | What the rules decided |
+| `value` | `string?` | The full value, the masked value, or the token, per `decision`. Absent when `denied` |
+| `policy` | `string?` | The rule that decided |
+| `error` | `{ code, message, policy? }?` | With `continueOnError`, why this token failed |
+
+<Callout>
+A **denied** decision is a normal result, not an error: the call succeeds and that item has no `value`. Always check `decision` before using `value`.
+</Callout>
+
+**Example: show a support agent what they're allowed to see**
+
+```ts
+const [nino, phone] = await vault.detokenize(
+  VAULT,
+  [customer.nino_token, customer.phone_token],
+  `Ticket ${ticket.id}, agent ${agent.email}`,
+);
+
+return {
+  nationalId: nino.decision === "denied" ? null : nino.value,  // "•• •• •• 56 C" if masked
+  phone: phone.decision === "denied" ? null : phone.value,
+};
+```
+
+**Example: ask for masked even though the rule allows more**
+
+```ts
+const [r] = await vault.detokenize(VAULT, [{ token, redaction: "masked" }], "Account overview page");
+// r.decision === "masked" even for a caller allowed plaintext
+```
+
+**Example: a batch job that tolerates erased customers**
+
+```ts
+const results = await vault.detokenize(VAULT, tokens, "Monthly statement run 2026-11", { continueOnError: true });
+for (const r of results) {
+  if (r.error?.code === "token_not_found") continue;   // erased since the statement was queued
+  if (r.decision !== "plaintext") throw new Error(`statement job needs plaintext, got ${r.decision}`);
+  render(r.index, r.value!);
+}
+```
+
+**Errors:** `invalid_request` (missing purpose), `token_not_found`, `policy_denied` (no rule at all lets this account reveal), `rate_limited` (a reveal limit on the rule), `key_service_unavailable`. If the person is **restricted**, every token of theirs comes back `denied` (only an approved break-glass request gets past a restriction).
+
+**REST:** [`POST /v1/vaults/{vault}/detokenize`](/api-reference/#data-api/tag/tokens/POST/v1/vaults/{vault}/detokenize)
+
+---
+
+### insertRecord
+
+```ts
+insertRecord(vault: string, fields: Record<string, string>, subjectRef?: string): Promise<{ id: string; tokens: Record<string, string> }>
+```
+
+Stores several fields for one person in one call and returns the record ID and a token per field. Equivalent to `tokenize` with the same `subject_ref` on each item, plus a record ID that groups them, so [`getRecord`](#getrecord) can read them back together.
+
+```ts
+const { id, tokens } = await vault.insertRecord(VAULT, {
+  full_name: "Samuel Adeyemi",
+  date_of_birth: "1988-03-14",
+  national_id: "AB123456C",
+  iban: "GB82WEST12345698765432",
+}, "cust_1042");
+
+await db.customers.update("cust_1042", { onshore_record: id, ...tokens });
+// tokens = { full_name: "tok_…", date_of_birth: "tok_…", national_id: "tok_…", iban: "tok_…" }
+```
+
+All fields succeed or none are stored. **Errors:** as for `tokenize`. **REST:** `POST /v1/vaults/{vault}/records`
+
+---
+
+### getRecord
+
+```ts
+getRecord(vault: string, id: string, purpose: string): Promise<Record<string, DetokenizeResult>>
+```
+
+Reads every field of a record, each decided separately by the access rules, exactly like `detokenize`. The purpose travels in the `X-RV-Purpose` header, so it doesn't end up in URL access logs.
+
+```ts
+const fields = await vault.getRecord(VAULT, customer.onshore_record, `KYC review ${caseId}`);
+// { full_name: { decision: "plaintext", value: "Samuel Adeyemi" },
+//   national_id: { decision: "masked", value: "•• •• •• 56 C" }, … }
+
+const name = fields.full_name?.decision === "denied" ? "(hidden)" : fields.full_name?.value;
+```
+
+**Errors:** `invalid_request` (unknown record, missing purpose), `key_service_unavailable`. **REST:** `GET /v1/vaults/{vault}/records/{id}`
+
+---
+
+### updateValue
+
+```ts
+updateValue(vault: string, token: string, value: string): Promise<void>
+```
+
+Changes the value behind a token, keeping the token. Works only for **new token each time** (cell) fields, such as an address or phone number that changes over time. Deterministic tokens can't be updated, because the token is tied to the value: store the new value with `tokenize` and save the new token instead.
+
+```ts
+// The customer moved. Their address token in your database stays valid.
+await vault.updateValue(VAULT, customer.address_token, "14 Harbour Street, Leith, EH6 6JJ");
+```
+
+**Errors:** `invalid_request` (not a cell token), `token_not_found`, `validation_failed`, `duplicate_value`, `policy_denied`. **REST:** `PUT /v1/vaults/{vault}/tokens/{token}`
+
+---
+
+### lookup
+
+```ts
+lookup(vault: string, field: string, value: string): Promise<string>
+```
+
+Finds the token for a value **without decrypting anything**. The vault keeps a keyed hash (a blind index) of each value in a searchable field and compares hashes. Use it to answer "is this ID number already a customer?" or to find a customer by email when signing in.
+
+```ts
+try {
+  const token = await vault.lookup(VAULT, "national_id", submittedNino);
+  const existing = await db.customers.findBy({ nino_token: token });
+  return { duplicate: true, customerId: existing.id };
+} catch (e) {
+  if (e instanceof VaultError && e.code === "token_not_found") return { duplicate: false };
+  throw e;
+}
+```
+
+The field must be *same value, same token* (deterministic), or marked **searchable** in the console. Values are normalised first, so the format a person typed doesn't matter. Lookups are limited to **60 a minute per caller**, because a lookup is a yes-or-no oracle: unlimited lookups would let someone test every possible ID number.
+
+**Errors:** `token_not_found` (no such value), `invalid_request` (unknown field, or not searchable), `validation_failed` (not a valid value for the field), `rate_limited`, `policy_denied`. **REST:** `POST /v1/vaults/{vault}/lookup`
+
+---
+
+### searchSubjects
+
+```ts
+searchSubjects(vault: string, query?: SubjectQuery): Promise<{ subjects: SubjectSummary[]; total: number }>
+```
+
+Lists the people in a vault, for data subject requests, audits and support tools.
+
+| `query` field | Type | Meaning |
+| --- | --- | --- |
+| `query` | `string` | A token, your customer reference, or an exact value (matched through the blind index, never decrypted) |
+| `field_type` | `string` | Only people holding this data type, such as `iban` |
+| `has_reveals` | `boolean` | Only people revealed in the last 30 days |
+| `flagged` | `boolean` | Only flagged people |
+| `created_after`, `created_before` | `string` | ISO dates |
+| `sort` | `"created_at" \| "field_count" \| "last_accessed"` | Default `created_at` |
+| `dir` | `"asc" \| "desc"` | Default `desc` |
+| `limit` | `number` | 1 to 200. Default 50 |
+| `offset` | `number` | For paging |
+
+Each `SubjectSummary` has `id` (the vault's ID for the person), `ref` (your reference), `field_count`, `created_at`, `last_accessed`, `reveals_30d` and `restricted`.
+
+```ts
+// Find the person behind your customer ID
+const { subjects } = await vault.searchSubjects(VAULT, { query: "cust_1042" });
+const person = subjects[0];
+
+// Page through everyone holding an IBAN
+for (let offset = 0; ; offset += 200) {
+  const page = await vault.searchSubjects(VAULT, { field_type: "iban", limit: 200, offset });
+  page.subjects.forEach(audit);
+  if (offset + 200 >= page.total) break;
+}
+```
+
+**REST:** `POST /v1/vaults/{vault}/subjects/search`
+
+---
+
+### getSubject
+
+```ts
+getSubject(vault: string, subjectId: string): Promise<SubjectSummary & { fields: SubjectField[] }>
+```
+
+One person and every field held on them, each **masked at most**: this never returns a full value, even for a caller allowed plaintext. Each field has `field`, `data_type`, `token`, `masked` (when the rules allow at least masked), `decision` and `record_id`.
+
+```ts
+const person = await vault.getSubject(VAULT, subjectId);
+console.table(person.fields.map((f) => ({ field: f.field, shown: f.masked ?? "(hidden)" })));
+```
+
+**REST:** `GET /v1/vaults/{vault}/subjects/{id}`
+
+---
+
+### exportSubject
+
+```ts
+exportSubject(vault: string, subjectId: string, purpose: string): Promise<ExportedField[]>
+```
+
+Exports one person's data for an access request (GDPR article 15, NDPA section 34, and similar). Each row has `field`, `data_type`, `token`, `decision` and `value` (the full value, masked, or the token, as the rules allow). Needs the `export` action, which you'd normally give only to a DSAR service account.
+
+```ts
+const rows = await vault.exportSubject(VAULT, subjectId, `DSAR ${request.reference}`);
+await sendSecurely(request.email, toCsv(rows.map(({ field, value }) => ({ field, value }))));
+```
+
+**REST:** `GET /v1/vaults/{vault}/subjects/{id}/export`
+
+---
+
+### restrictSubject
+
+```ts
+restrictSubject(vault: string, subjectId: string, restricted: boolean, purpose: string): Promise<boolean>
+```
+
+Restricts processing for a person (GDPR article 18): while restricted, **nothing** about them reveals, whatever the access rules say. Values stay stored. Returns the new state. Needs the `delete` action.
+
+```ts
+await vault.restrictSubject(VAULT, subjectId, true, "Accuracy disputed, case 551");
+// … later
+await vault.restrictSubject(VAULT, subjectId, false, "Dispute resolved, case 551");
+```
+
+**REST:** `POST /v1/vaults/{vault}/subjects/{id}/restrict`
+
+---
+
+### eraseSubject
+
+```ts
+eraseSubject(vault: string, subjectId: string, purpose: string): Promise<{ erased_records: number }>
+```
+
+Erases everything held on a person. Their tokens stop working at once and return `token_not_found`. The audit log keeps a record of the erasure, without values. A value shared with another person (two customers with the same phone number, in a deterministic field) survives until its last owner is erased.
+
+```ts
+const { erased_records } = await vault.eraseSubject(VAULT, subjectId, `Erasure request ${ref}`);
+await db.customers.anonymise(customerId);
+```
+
+<Callout type="error">
+Erasure can't be undone. Backups age out on your backup schedule.
+</Callout>
+
+**REST:** `DELETE /v1/vaults/{vault}/subjects/{id}`
+
+---
+
+### residentCheck
+
+```ts
+residentCheck(vault: string, token: string, check: "equals" | "name_match" | "age_at_least" | "amount_at_least", arg: string, purpose: string): Promise<boolean>
+```
+
+Asks a yes-or-no question about a stored value. The comparison runs in the vault's country and only `true` or `false` leaves it, so a service abroad can make a decision without the value crossing the border.
+
+| `check` | Field must hold | `arg` | `true` when |
+| --- | --- | --- | --- |
+| `equals` | Any data type | A value | It matches the stored value after normalising |
+| `name_match` | `person_name` | A name | The same name parts in any order: `Adeyemi Samuel` matches `Samuel Adeyemi` |
+| `age_at_least` | `date` | Whole years, `"0"` to `"150"` | The stored date of birth makes the person at least that old today |
+| `amount_at_least` | `amount` | A number | The stored amount is at least that. Symbols are ignored and `£1,250.50`, `1.250,50 €` and `1 250,50` all read as 1250.5 |
+
+```ts
+// Is the customer 18 or over? The date of birth never leaves the UK.
+const adult = await vault.residentCheck(VAULT, customer.dob_token, "age_at_least", "18", "Card eligibility");
+
+// Does the name on the incoming transfer match the account holder?
+const match = await vault.residentCheck(VAULT, account.name_token, "name_match", transfer.beneficiaryName, `Payment ${transfer.id}`);
+```
+
+Needs the `compare` action, and shares the lookup limit of 60 a minute, for the same reason. **Errors:** `invalid_request` (check unsuited to the field, bad `arg`), `token_not_found`, `rate_limited`, `policy_denied`. **REST:** `POST /v1/vaults/{vault}/resident/check`
+
+---
+
+### detect
+
+```ts
+detect(text: string, opts?: { tokenize?: boolean; vault?: string; entities?: string[]; includeShadow?: boolean }): Promise<{ entities: Entity[]; text?: string; ruleset_version?: number }>
+```
+
+Finds identifiers in free text or JSON: support messages, notes, uploaded documents, log lines. Optionally stores each one and returns the text with tokens in place.
+
+| Option | Meaning |
+| --- | --- |
+| `vault` | Apply this vault's country packs and your own data types. Without it, every built-in pack runs. Required with `tokenize`. |
+| `tokenize` | Store each match that maps to a field of the vault and replace it with its token in `text`. Matches with no field are masked; card numbers are always masked, never stored. |
+| `entities` | Only look for these data types, such as `["uk_nino", "iban"]` or your own `c_loan_id`. |
+| `includeShadow` | Also list matches from data types in watch-only mode, marked `shadow: true`. |
+
+Each entity has `type`, `start` and `end` (byte offsets into `text`), `score` (0 to 1), `custom` and, for your own types, `entity_version`.
+
+```ts
+const msg = "Hi, refund to GB82 WEST 1234 5698 7654 32 please. My NI number is AB 12 34 56 C";
+
+// Just find
+const { entities } = await vault.detect(msg, { vault: VAULT });
+// [{ type: "iban", start: 14, end: 41, score: 0.99 }, { type: "uk_nino", start: 66, end: 79, score: 0.97 }]
+
+// Find, store and replace before saving the message in your helpdesk
+const { text } = await vault.detect(msg, { vault: VAULT, tokenize: true });
+// "Hi, refund to tok_iban_Qa81LmZ3Xe0d please. My NI number is tok_uk_nino_7Hq2xP9LmA4c"
+```
+
+<Callout>
+Offsets are in **bytes** of the UTF-8 text, not JavaScript string indexes. For text with non-ASCII characters, slice a `Buffer`: `Buffer.from(msg).subarray(e.start, e.end).toString()`.
+</Callout>
+
+Text is limited to 1 MiB. **Errors:** `invalid_request` (`tokenize` without `vault`), `detection_not_ready` (retried). **REST:** `POST /v1/detect`
+
+---
+
+### checkFlow
+
+```ts
+checkFlow(vault: string, flow: string, text: string): Promise<{ identifiers: number; tokens: number; clean: boolean; by_type: Record<string, number> }>
+```
+
+For a job that copies data somewhere Onshore can't sit in the path (a nightly export to a warehouse abroad, a file sent to a partner). Send a sample of each batch before it leaves. The vault counts identifiers (sent unprotected) and tokens (protected); it keeps **only the counts**, never the text. The counts appear on the residency map, and the first check puts the flow on it. Find the flow ID on the map.
+
+```ts
+const sample = batch.slice(0, 500).map((r) => JSON.stringify(r)).join("\n");
+const report = await vault.checkFlow(VAULT, "flow_nightly_bq", sample);
+if (!report.clean) {
+  // by_type = { uk_nino: 3, email: 41 }
+  throw new Error(`export blocked: ${report.identifiers} identifiers would leave unprotected`);
+}
+await sendToWarehouse(batch);
+```
+
+**REST:** `POST /v1/vaults/{vault}/flows/{flow}/check`
+
+---
+
+### createClientToken
+
+```ts
+createClientToken(vault: string, opts: {
+  kind: "collect" | "reveal"; origin: string;
+  fields?: string[]; tokens?: string[]; purpose?: string;
+  onBehalfOf?: string; subjectRef?: string; bindIp?: string; ttlSeconds?: number;
+}): Promise<{ client_token: string; expires_at: string }>
+```
+
+Mints a single-use token that lets a browser or app collect or reveal values through [secure components](/developers/sdks/web/), without your page or app ever holding the value.
+
+| Option | Meaning |
+| --- | --- |
+| `kind` | `collect` to take values in, `reveal` to show them |
+| `origin` | The site (`https://app.yourbank.example`) or app (`rvapp://com.yourbank.app`) that will use it. Must be listed under the vault's secure components |
+| `fields` | For collect: up to 10 fields the form shows |
+| `tokens` | For reveal: up to 20 tokens to show |
+| `purpose` | Required for reveal. Recorded with each value shown |
+| `onBehalfOf` | Who in your system asked, such as an agent's email. Recorded in the audit log |
+| `subjectRef` | For collect: the person the values belong to |
+| `bindIp` | Only this IP address may use the token. Set it to the person's address where you know it |
+| `ttlSeconds` | Default 120, at most 600 |
+
+```ts
+// In your API route: the signed-in customer adds their ID number
+app.post("/api/id-form", requireUser, async (req, res) => {
+  const { client_token } = await vault.createClientToken(VAULT, {
+    kind: "collect",
+    origin: "https://app.yourbank.example",
+    fields: ["national_id"],
+    subjectRef: req.user.customerId,
+    bindIp: req.ip,
+  });
+  res.json({ clientToken: client_token });
+});
+```
+
+<Callout type="warning">
+Check that the person may see the record **before** minting a reveal token. The access rules apply to your service account, which can usually see far more than any one user.
+</Callout>
+
+**Errors:** `invalid_request` (origin not listed, too many fields or tokens, missing purpose for reveal), `policy_denied`. **REST:** `POST /v1/vaults/{vault}/client-tokens`
+
+---
+
+### cloak
+
+```ts
+cloak(vault: string, text: string, opts?: { profileId?: string; options?: Record<string, string>; keepDays?: number }): Promise<{ text: string; changed: Record<string, number>; id?: string }>
+```
+
+Replaces identifiers in text with placeholders, stand-in names or less specific values, before the text goes to an AI model or any outside service. Pass a saved cloak setting (`profileId`, from **Connections → AI → Cloak settings**) or the setting inline (`options`), not both. With neither, every identifier becomes a placeholder.
+
+| `options` key | Choices |
+| --- | --- |
+| `person_name` | `placeholder` (`[NAME_1]`), `synthetic` (a realistic stand-in name), `keep` |
+| `amount` | `placeholder`, `band` (`£1k–£2k`, in the same currency), `keep` |
+| `date` | `placeholder`, `age_band` (`aged 35–44`), `year`, `keep` |
+| `address` | `keep` (the default), `state`, `region` (the country), `placeholder` |
+| `phone`, `card_pan`, `payment_ref` | `placeholder`, `last4` |
+| `email` | `placeholder`, `domain` (`a gmail.com address`) |
+| Country pack types (`uk_nino`, `iban`, `in_aadhaar`, `br_cpf`, …) | `placeholder`, `last4` |
+
+With `keepDays` (1 to 365), the map from placeholders back to real values is sealed in the vault as a **digital twin** and its `id` returned, so you can restore the model's reply with [`uncloak`](#uncloak).
+
+```ts
+const prompt = "Hi, I'm Sarah Johnson, 34. My card 4111 1111 1111 1111 was charged £1,250.50 twice.";
+const cloaked = await vault.cloak(VAULT, prompt, {
+  options: { person_name: "synthetic", amount: "band" },
+  keepDays: 1,
+});
+// cloaked.text    = "Hi, I'm Emily Carter, 34. My card [CARD_1] was charged £1k–£2k twice."
+// cloaked.changed = { person_name: 1, card_pan: 1, amount: 1 }
+
+const reply = await llm.complete(cloaked.text);
+const restored = await vault.uncloak(VAULT, cloaked.id!, reply, `Support chat ${chatId}`);
+```
+
+Text is limited to 256 KB. **Errors:** `invalid_request` (unknown option or choice, both `profileId` and `options`), `too_large`, `detection_not_ready`. **REST:** `POST /v1/vaults/{vault}/cloak`
+
+---
+
+### uncloak
+
+```ts
+uncloak(vault: string, id: string, text: string, purpose: string): Promise<{ text: string; decisions: Record<string, string> }>
+```
+
+Swaps placeholders and stand-in names in text (usually a model's reply) back to the real values, using the digital twin from `cloak`. Each kind of value comes back in full only if your access rules allow plaintext for it; otherwise masked. `decisions` says what happened per data type. Ranges, age bands and places can't be reversed and stay as they are. Audited like a reveal.
+
+```ts
+const { text, decisions } = await vault.uncloak(VAULT, twinId, "Sorry Emily, I've flagged [CARD_1].", "Support chat 551");
+// text = "Sorry Sarah, I've flagged ****1111."   decisions = { person_name: "plaintext", card_pan: "masked" }
+```
+
+**Errors:** `not_found` (no such twin, or it expired), `too_large`. **REST:** `POST /v1/vaults/{vault}/uncloak`
+
+---
+
+### deleteTwin
+
+```ts
+deleteTwin(vault: string, id: string): Promise<void>
+```
+
+Deletes a digital twin before it expires, for example when the conversation ends. **REST:** `DELETE /v1/vaults/{vault}/twins/{id}`
+
+---
+
+### verifyWebhook
+
+```ts
+import { verifyWebhook } from "@onshorehq/sdk";
+verifyWebhook(secret: string, rawBody: string | Buffer, signatureHeader: string, opts?: { toleranceSeconds?: number; now?: number }): boolean
+```
+
+Checks that a [webhook](/developers/webhooks/) came from your install and wasn't changed or replayed. The `x-rv-signature` header is `t=<unix seconds>,v1=<hex HMAC-SHA256 of "t.body">`. During a secret rotation it carries two `v1` values for 24 hours; either one passing is enough. Deliveries older than `toleranceSeconds` (default 300) fail. The comparison is constant-time.
+
+Pass the body **exactly as received**. Parsing and re-serialising JSON changes the bytes and the signature won't match.
+
+<Tabs items={["Express", "Fastify", "Next.js route"]}>
+<Tabs.Tab>
+```ts
+import express from "express";
+import { verifyWebhook } from "@onshorehq/sdk";
+
+app.post("/hooks/onshore", express.raw({ type: "application/json" }), (req, res) => {
+  if (!verifyWebhook(process.env.ONSHORE_WEBHOOK_SECRET!, req.body, req.get("x-rv-signature") ?? "")) {
+    return res.sendStatus(401);
+  }
+  const event = JSON.parse(req.body.toString());
+  queue.add(event);          // answer quickly; do the work elsewhere
+  res.sendStatus(204);
+});
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```ts
+fastify.addContentTypeParser("application/json", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
+
+fastify.post("/hooks/onshore", async (req, reply) => {
+  if (!verifyWebhook(secret, req.body as Buffer, String(req.headers["x-rv-signature"] ?? ""))) {
+    return reply.code(401).send();
+  }
+  const event = JSON.parse((req.body as Buffer).toString());
+  await handle(event);
+  return reply.code(204).send();
+});
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```ts filename="app/hooks/onshore/route.ts"
+import { verifyWebhook } from "@onshorehq/sdk";
+
+export async function POST(req: Request) {
+  const raw = await req.text();
+  if (!verifyWebhook(process.env.ONSHORE_WEBHOOK_SECRET!, raw, req.headers.get("x-rv-signature") ?? "")) {
+    return new Response(null, { status: 401 });
+  }
+  await handle(JSON.parse(raw));
+  return new Response(null, { status: 204 });
+}
+```
+</Tabs.Tab>
+</Tabs>
+
+## Types
+
+All types are exported from the package.
+
+```ts
+export interface TokenizeItem { field: string; value: string; subject_ref?: string }
+export interface TokenizeResult { index: number; token?: string; existing?: boolean; error?: { code: string; message: string } }
+export interface DetokenizeItem { token: string; redaction?: "masked" | "token_only" }
+export interface DetokenizeResult { index: number; decision?: string; value?: string; policy?: string; error?: { code: string; message: string; policy?: string } }
+export interface SubjectQuery { query?: string; field_type?: string; has_reveals?: boolean; flagged?: boolean; created_after?: string; created_before?: string; sort?: "created_at" | "field_count" | "last_accessed"; dir?: "asc" | "desc"; limit?: number; offset?: number }
+export interface SubjectSummary { id: string; ref: string; field_count: number; created_at: string; last_accessed: string | null; reveals_30d: number; restricted: boolean }
+export interface SubjectField { field: string; data_type: string; token: string; masked?: string; decision: string; record_id: string }
+export interface ExportedField { field: string; data_type: string; value: string; token: string; decision: string }
+export class VaultError extends Error { status: number; code: string; policy?: string; requestId?: string }
+```
+
+## Testing your code
+
+### Against a test vault
+
+Create a vault with a `v_test_` ID in the console and a separate service account for it. Test vaults behave exactly like live ones; use them in CI with made-up values. The [Test safely](/developers/recipes/test-safely/) guide lists valid made-up values for every data type (for example `AB123456C` for a UK National Insurance number and `GB82WEST12345698765432` for an IBAN).
+
+### Without a vault
+
+Pass a fake `fetch`. The client only needs `/v1/auth/token` to return a token; everything else is yours to script.
+
+```ts filename="vault.test.ts"
+import { test } from "node:test";
+import assert from "node:assert";
+import crypto from "node:crypto";
+import { VaultClient } from "@onshorehq/sdk";
+
+const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
+
+test("shows masked IDs to agents", async () => {
+  const vault = new VaultClient({
+    baseUrl: "https://vault.test", serviceAccountId: "sa_test", keyId: "key_test",
+    privateKey: crypto.randomBytes(32).toString("base64"), maxAttempts: 1,
+    fetch: async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/v1/auth/token") return json({ access_token: "t", expires_in: 900 });
+      if (path.endsWith("/detokenize")) return json({ results: [{ index: 0, decision: "masked", value: "•• •• •• 56 C" }] });
+      return json({ error: { code: "invalid_request", message: "unexpected" } }, 400);
+    },
+  });
+
+  const [r] = await vault.detokenize("v_test_1", ["tok_x"], "test");
+  assert.equal(r.decision, "masked");
+});
+```
+
+## Next
+
+- [Task guides](/developers/recipes/): store, reveal, find, data subject requests, AI, secure components end to end
+- [API reference](/api-reference/): every endpoint, with a client to try them
+- [Retries and errors](/developers/recipes/retries-and-errors/): what's safe to retry and how to handle each code

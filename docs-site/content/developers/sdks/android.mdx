@@ -1,0 +1,191 @@
+---
+title: Android SDK
+description: Complete reference for the Onshore Android library. SecureClient, CollectView and RevealView, with Views, Jetpack Compose and coroutine examples, errors and certificate pinning.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Android SDK <Early />
+
+The `ng.onshore.sdk` library collects and shows sensitive values in an Android app, using the same single-use client tokens as the [web components](/developers/sdks/web/). It holds **no credentials**.
+
+| | |
+| --- | --- |
+| Package | `ng.onshore.sdk` |
+| Source | [github.com/Onshore-HQ/onshore-android](https://github.com/Onshore-HQ/onshore-android) |
+| Min SDK | 24 (Android 7.0) |
+| Language | Kotlin, callable from Java |
+| Dependencies | None beyond the Android framework |
+| Threading | `SecureClient` calls block: call them off the main thread. The views do this for you |
+
+## Install
+
+It isn't on Maven Central yet. Build the library from its repository and add the AAR to your app:
+
+```sh
+git clone https://github.com/Onshore-HQ/onshore-android && cd onshore-android
+./gradlew assembleRelease   # writes build/outputs/aar/
+```
+
+```kotlin filename="app/build.gradle.kts"
+dependencies {
+    implementation(files("libs/onshore-android-release.aar"))
+}
+```
+
+## Set up
+
+<Steps>
+
+### List your app as an origin
+
+In **Vaults → Secure components**, add `rvapp://` followed by your application ID in lower case: `rvapp://com.yourbank.wallet`.
+
+### Mint client tokens on your server
+
+```ts
+const { client_token } = await vault.createClientToken(VAULT, {
+  kind: "collect", origin: "rvapp://com.yourbank.wallet",
+  fields: ["national_id"], subjectRef: user.customerId,
+});
+```
+
+### Create the client
+
+```kotlin
+val onshore = SecureClient(
+    baseUrl = "https://vault.yourbank.example",
+    appOrigin = "rvapp://com.yourbank.wallet",
+)
+```
+
+</Steps>
+
+## Collect with CollectView
+
+```kotlin
+class AddIdActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val token = intent.getStringExtra("clientToken")!!
+
+        val form = CollectView(
+            context = this,
+            client = onshore,
+            clientToken = token,
+            labels = mapOf("national_id" to "National Insurance number"),
+            submitLabel = "Save",
+            onTokens = { tokens -> lifecycleScope.launch { api.saveIdToken(tokens.getValue("national_id")) } },
+            onError = { e ->
+                when (e) {
+                    is VaultException.ValidationFailed -> Unit // shown under the field; the token still works
+                    VaultException.InvalidClientToken -> toast("This form expired. Open it again.")
+                    VaultException.Denied -> toast("You can't add this.")
+                    VaultException.RateLimited -> toast("Too many tries. Wait a minute.")
+                    is VaultException.Server, VaultException.Transport -> toast("Couldn't save. Try again.")
+                }
+            },
+        )
+        setContentView(form)
+    }
+}
+```
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `context` | | An Activity context (needed to secure the window) |
+| `client` | | Your `SecureClient` |
+| `clientToken` | | From your server |
+| `labels` | empty | Field name to label |
+| `submitLabel` | `"Continue"` | The button text |
+| `onTokens` | | Called on the main thread with `field → token` |
+| `onError` | ignore | Called on the main thread with a `VaultException` |
+
+`CollectView` builds a field per field the token covers, with a number keyboard for numeric data types. It has a `submit()` method if you want your own button, and no method that returns what was typed.
+
+What it does for you: sets `FLAG_SECURE` on the window while attached, which blocks screenshots, screen recording and the recent-apps preview; refuses touches when another app draws over it (`filterTouchesWhenObscured`); turns off autofill, suggestions and the copy and paste menu on each field; clears values when it leaves the window.
+
+## Reveal with RevealView
+
+```kotlin
+val shown = RevealView(this, onshore, revealToken, hideAfterMs = 30_000) { e -> Log.w("onshore", "reveal: $e") }
+container.addView(shown)
+```
+
+Values are removed after `hideAfterMs`, when the view stops being visible, and when it's detached. `FLAG_SECURE` applies while it's showing.
+
+## Jetpack Compose
+
+Wrap the views with `AndroidView`:
+
+```kotlin
+@Composable
+fun SecureIdForm(token: String, onTokens: (Map<String, String>) -> Unit) {
+    AndroidView(factory = { ctx ->
+        CollectView(ctx, onshore, token, labels = mapOf("national_id" to "NI number"), onTokens = onTokens)
+    })
+}
+```
+
+## SecureClient
+
+```kotlin
+class SecureClient(baseUrl: String, appOrigin: String, socketFactory: SSLSocketFactory? = null, timeoutMs: Int = 15_000)
+
+@Throws(VaultException::class) fun describe(clientToken: String): ComponentDescription
+@Throws(VaultException::class) fun collect(clientToken: String, values: Map<String, String>): Map<String, String>
+@Throws(VaultException::class) fun reveal(clientToken: String): List<RevealedValue>
+```
+
+| Method | Returns |
+| --- | --- |
+| `describe` | `ComponentDescription(kind, fields: List<FieldDescription(name, dataType)>, tokens)`. Doesn't spend the token |
+| `collect` | A token per field. Spends the token unless a value fails its format check |
+| `reveal` | `List<RevealedValue(decision, value, errorCode)>`. `toString()` leaves out `value`, so logging one doesn't leak it |
+
+From a coroutine:
+
+```kotlin
+val tokens = withContext(Dispatchers.IO) { onshore.collect(token, mapOf("national_id" to typed)) }
+```
+
+Requests don't follow redirects (a redirect mustn't carry a value elsewhere) and don't use caches.
+
+### Errors
+
+```kotlin
+sealed class VaultException : Exception {
+    object InvalidClientToken                       // get a new token
+    class ValidationFailed(val fields: List<String>) // names only; the token still works
+    object Denied
+    object RateLimited
+    class Server(val status: Int, val serverCode: String)
+    object Transport                                // network failure or unreadable response
+}
+```
+
+### Pinning your server's certificate
+
+The simplest way needs no code: Android's [network security config](https://developer.android.com/privacy-and-security/security-config) with a `<pin-set>` for the vault's domain.
+
+```xml filename="res/xml/network_security_config.xml"
+<network-security-config>
+  <domain-config>
+    <domain includeSubdomains="false">vault.yourbank.example</domain>
+    <pin-set expiration="2027-12-31">
+      <pin digest="SHA-256">base64-of-current-public-key=</pin>
+      <pin digest="SHA-256">base64-of-backup-public-key=</pin>
+    </pin-set>
+  </domain-config>
+</network-security-config>
+```
+
+Reference it from `<application android:networkSecurityConfig="@xml/network_security_config">`. For your own trust logic, pass an `SSLSocketFactory` from an `SSLContext` built with your `TrustManager` as `socketFactory`.
+
+## Limits
+
+<Callout type="warning">
+**An app is weaker than a browser frame.** While a value is typed it exists in your app's process, and a hostile library in your app could walk the view tree to read it. `rvapp://` is a name, not proof of which app is calling; set `bind_ip` when minting if you know the device's address.
+</Callout>
+
+**Tested:** the client passed against a live install on an Android 10 emulator. **The views have not yet been shown on a screen**, and nothing has run on a physical device. Test in your app on real devices before release.
