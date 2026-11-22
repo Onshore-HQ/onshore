@@ -1,0 +1,105 @@
+---
+title: Breach protection
+description: How Onshore limits the damage when your systems are breached, what an attacker gets with it in place, what it doesn't stop, and how to set it up for the most protection.
+---
+
+import { Callout } from "nextra/components";
+
+# Breach protection
+
+Onshore doesn't stop every attacker getting into your systems. It makes a break-in far less damaging, because the sensitive values usually aren't there to take. It also lets you prove exactly what was touched.
+
+**In one line:** when you're breached, attackers get tokens instead of your customers' identities, and you can show precisely which records were opened.
+
+## How it protects you
+
+### 1. A stolen database holds tokens, not data
+
+Most breaches end with someone copying a database, a backup or an export. With Onshore, your systems store a token such as `tok_uk_nino_7Hq2xP9LmA` where they used to store a National Insurance number.
+
+The real values are in the vault:
+
+- each value is encrypted on its own,
+- the data keys are wrapped by a master key in a separate key service or your own hardware security module (see [Encryption keys](/guides/encryption-keys/)),
+- the vault runs apart from your application, with its own database and its own sign-in.
+
+So a leaked customer table, a public storage bucket, or a stolen laptop with a database dump exposes tokens. They can't be turned back into values outside the vault.
+
+### 2. Getting values back out is controlled and limited
+
+Every reveal is checked against [access rules](/guides/access-rules/):
+
+- **who** is asking (role, person or service account, multi-factor sign-in),
+- **why** (a stated purpose, kept in the audit log),
+- **from where** (approved networks and per-key IP allowlists),
+- **when** (office hours).
+
+Many people only ever see masked values (`*******6789`). **Reveal limits** cap how many values anyone can see in an hour, so an attacker with a stolen account can't quietly drain millions of records: they hit the limit, the vault answers `429 rate_limited`, and spike alerts reach your team.
+
+If anything is uncertain (the key service is sealed, the vault can't be reached, a rule doesn't clearly allow it), the answer is no. Onshore [fails closed](/security/): a fault never turns into a leak.
+
+### 3. It closes the side doors
+
+Many incidents come from copies of data, not the main database. Onshore removes identifiers before they leave:
+
+| Side door | How it's closed |
+| --- | --- |
+| Logs sent to monitoring vendors | [Log pipelines](/guides/connections/logs/) tokenize identifiers before logs leave |
+| Prompts sent to AI providers | [The AI gateway and cloaking](/developers/recipes/cloak-for-ai/) swap identifiers for placeholders or stand-in names |
+| Calls to outside vendors | [The HTTP proxy](/guides/connections/http-proxy/) tokenizes values in outgoing requests |
+| Web and mobile forms | [Secure components](/guides/connections/secure-components/) collect values in a frame served by the vault, so your servers never see them |
+| Support tickets | [Support tool adapters](/guides/connections/support-tools/) tokenize identifiers in tickets as they arrive |
+
+### 4. It shows what happened
+
+Every reveal, export and erasure is written to a [tamper-evident audit log](/guides/audit-log/): entries are hash-chained, with signed daily checkpoints, so any edit or deletion is detectable.
+
+After an incident you can say exactly which records were opened, by whom, when, from where and for what stated purpose. That's what a breach notification to a regulator or to customers has to state, and it often turns "we may have lost everything" into a short, precise list.
+
+### 5. Insiders get less
+
+Engineers, support staff and contractors work with tokens and masked values by default. Seeing a full value takes a rule that allows it, a stated reason, and an entry in the audit log. Sensitive rule changes can need a second person to approve.
+
+## What an attacker gets
+
+| The attack | Without Onshore | With Onshore |
+| --- | --- | --- |
+| A database dump through a bug such as SQL injection | Every customer's details | Tokens |
+| A leaked backup or a public storage bucket | A full copy of your data | Tokens |
+| A stolen laptop with a data export | Whatever was exported | Tokens |
+| A breach at your logging or monitoring vendor | Identifiers written into logs | Tokens and placeholders |
+| Prompts kept by an AI provider | Names and IDs your staff pasted | Placeholders and stand-in names |
+| A curious or bribed insider | Anything their access shows | Masked values; full ones only with a rule, a reason and an audit entry |
+| A stolen service-account key | Everything that key can read | What its rules allow, up to the reveal limit, with alerts |
+| Ransomware that copies data before encrypting it | Your customer records to publish | Tokens |
+
+## What it doesn't stop
+
+<Callout type="warning">
+No product makes a breach harmless. Plan for these.
+</Callout>
+
+- **A stolen key that's allowed to reveal values.** Reveal limits, network allowlists and alerts slow it down and make it visible. They don't make it impossible. Give each key only the actions and fields it needs.
+- **A compromised device or browser.** Malware on someone's laptop sees what that person sees.
+- **An attack on the vault itself.** It's the most protected part: every admin signs in with an authenticator code or a passkey, and keys can live in your own HSM. Nothing is invulnerable; restrict who can reach and administer the servers (see [What Onshore trusts](/security/#what-onshore-trusts)).
+- **Data you never send to Onshore.** Values left in spreadsheets, old databases or email are as exposed as before.
+- **Rules that allow everything.** If everyone may see every value in full, the vault protects little.
+
+## Set it up for the most protection
+
+1. **Store values at the source.** Tokenize in the service that first receives a value, before it's written anywhere. See [Store values](/developers/recipes/store-values/).
+2. **Move existing data in, and delete the originals.** [Load existing data](/guides/import-data/), check the tokens work, then remove the old columns and their backups on your normal retention schedule.
+3. **Keep default deny.** Start every role on masked values. Allow full values only where a job needs them, with a required purpose.
+4. **Set reveal limits** on every rule that returns full values, sized to a normal day's work.
+5. **Lock down service-account keys.** One key per service, an IP allowlist on each, only the actions it uses. Rotate keys when people leave.
+6. **Close the side doors** that apply to you: logs, AI, vendor calls, forms and tickets.
+7. **Copy the audit log to your SIEM**, so even someone with full server access can't quietly rewrite recent history.
+8. **Send alerts somewhere watched.** Point [webhooks and alert email](/guides/health-and-alerts/) at your on-call channel.
+9. **Use your own HSM** for the master key if your regulator expects it.
+10. **Rehearse an incident.** Pull an audit export for a made-up breach, and check you can say which records were touched within an hour.
+
+Some of these are paid features: the side-door connections, advanced access rules, webhooks and evidence reports need Onshore Business, and SIEM streaming and HSM need Enterprise. See [Editions](/get-started/editions/).
+
+## Where Onshore is today
+
+Onshore has passed its own scripted attack suite repeatedly, with no open findings. **It hasn't had an independent penetration test yet, and holds no certifications (ISO 27001, SOC 2) today.** Ask us for the internal test report. See [Security model](/security/) and [Known limits](/operate/known-limits/).
