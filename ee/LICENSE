@@ -1,0 +1,94 @@
+Onshore Commercial Licence
+Version 1.0
+
+Copyright (c) 2026 Flowsplus Services. All rights reserved.
+
+This licence applies to every file in the "ee" directory of the Onshore
+repository, and to any other file that states it is covered by the Onshore
+Commercial Licence (together, the "Commercial Software"). The rest of the
+repository is licensed separately, as stated in its own LICENSE file.
+
+1. Definitions
+
+"Licensor" means Flowsplus Services, the owner of Onshore.
+
+"You" means the individual or legal entity using the Commercial Software, and
+any entity that controls, is controlled by, or is under common control with it.
+
+"Subscription" means a current, paid agreement with the Licensor (or one of its
+authorised resellers) for an Onshore edition, together with the licence key
+issued under it.
+
+"Production Use" means any use of the Commercial Software that processes real
+data about real people, or that supports a live service offered to anyone,
+including your own staff or customers.
+
+"Non-production Use" means use only for development, testing, evaluation or
+demonstration, with made-up data.
+
+2. What you may do
+
+2.1 Without a Subscription, you may copy, read, modify and run the Commercial
+Software for Non-production Use only.
+
+2.2 With a valid Subscription, you may also put the Commercial Software into
+Production Use, within the editions, modules, countries and other limits stated
+in that Subscription and encoded in its licence key, for as long as the
+Subscription remains in force.
+
+2.3 You may modify the Commercial Software and use your modifications under the
+same terms. The Licensor keeps all rights in the Commercial Software. You own
+your own modifications, but they may be used only under this licence and with a
+valid Subscription where clause 2.2 requires one.
+
+3. What you may not do
+
+You may not, unless the Licensor agrees in writing:
+
+(a) put the Commercial Software into Production Use without a valid
+    Subscription, or beyond its limits;
+(b) remove, disable, bypass or change any licence key check, or any feature
+    that limits the Commercial Software to the scope of a Subscription;
+(c) offer the Commercial Software, or anything based on it, to third parties as
+    a hosted or managed service, or sell, sublicense, lend or distribute it,
+    except to your own contractors working for you under these terms;
+(d) remove or change any copyright, licence or trademark notice; or
+(e) use the Commercial Software to build a product that competes with Onshore.
+
+4. Third-party components
+
+Third-party components included with or used by the Commercial Software are
+licensed under their own licences, which are not changed by this licence.
+
+5. Trademarks
+
+This licence gives no right to use the Onshore name or logo, except to refer
+truthfully to the software. See TRADEMARKS.md in the repository.
+
+6. Ending this licence
+
+This licence ends automatically if you break its terms. When your Subscription
+ends, your right of Production Use under clause 2.2 ends with it, though you may
+keep exporting and erasing your own data, as described in the product
+documentation, for 90 days. Clauses 3 to 8 survive the end of this licence.
+
+7. No warranty
+
+THE COMMERCIAL SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NON-INFRINGEMENT, EXCEPT AS A SUBSCRIPTION AGREEMENT
+STATES IN WRITING.
+
+8. Limitation of liability
+
+TO THE EXTENT THE LAW ALLOWS, THE LICENSOR IS NOT LIABLE FOR ANY INDIRECT,
+INCIDENTAL, SPECIAL OR CONSEQUENTIAL DAMAGES, OR FOR LOSS OF DATA, PROFITS OR
+REVENUE, ARISING FROM THE COMMERCIAL SOFTWARE, EXCEPT AS A SUBSCRIPTION
+AGREEMENT STATES IN WRITING.
+
+9. Subscription agreement
+
+If you have a signed Subscription agreement with the Licensor, its terms apply
+where they differ from this licence, including the governing law and courts.
+
+Questions about Subscriptions: https://onshorevault.com
