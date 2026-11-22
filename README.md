@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.png">
-  <img alt="Onshore" src=".github/assets/logo-light.png" width="300">
-</picture>
+<img alt="Onshore" src=".github/assets/logo.png" width="300">
 
 ### Keep customer data in its country. Keep your global tools.
 
