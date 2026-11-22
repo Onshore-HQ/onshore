@@ -79,7 +79,9 @@ var samplePhones = map[string]func(s *Samples) string{
 	"GB": func(s *Samples) string { return "+44 7700 900" + s.digits(3) },
 	"IE": func(s *Samples) string { return "+353 85 " + s.digits(3) + " " + s.digits(4) },
 	"DE": func(s *Samples) string { return "+49 30 " + s.digits(8) },
-	"FR": func(s *Samples) string { return "+33 6 " + s.digits(2) + " " + s.digits(2) + " " + s.digits(2) + " " + s.digits(2) },
+	"FR": func(s *Samples) string {
+		return "+33 6 " + s.digits(2) + " " + s.digits(2) + " " + s.digits(2) + " " + s.digits(2)
+	},
 	"NL": func(s *Samples) string { return "+31 6 " + s.digits(8) },
 	"BR": func(s *Samples) string { return "+55 11 9" + s.digits(4) + " " + s.digits(4) },
 	"AE": func(s *Samples) string { return "+971 50 " + s.digits(3) + " " + s.digits(4) },

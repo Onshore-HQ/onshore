@@ -5,7 +5,7 @@ import { Badge, Checks, ErrorLine, Modal, ShownOnce, TypedConfirm } from "@/comp
 import { control, day, when } from "@/lib/api";
 
 export interface Identity {
-  edition: string; allowed: boolean;
+  edition: string; allowed: boolean; allowed_features?: { sso: boolean; scim: boolean; ldap: boolean };
   mappings: { group: string; roles: string[] }[];
   scim: { base_url: string; tokens: { id: string; name: string; created_at: string; last_used_at: string | null }[] };
   ldap: null | { url: string; start_tls: boolean; ca_cert: string | null; bind_dn: string; base_dn: string; user_filter: string; group_base_dn: string | null; group_filter: string; email_domains: string[]; jit_provisioning: boolean };
@@ -54,7 +54,7 @@ export function ScimCard({ id, onChange }: { id: Identity; onChange: () => void 
   const synced = id.people_by_source.scim ?? 0;
   return (
     <div className="card">
-      <div className="spread"><h2>{tr("Directory sync (SCIM)")}</h2>{!id.allowed && <Badge tone="warn">{tr("Enterprise and Cloud")}</Badge>}</div>
+      <div className="spread"><h2>{tr("Directory sync (SCIM)")}</h2>{!id.allowed && <Badge tone="warn">{tr("Business and above")}</Badge>}</div>
       <p className="small muted">{tr("Your identity provider adds people, updates them and removes them here, so access ends the moment someone leaves. Works with Entra ID, Okta, OneLogin, JumpCloud, authentik and any SCIM 2.0 client. Removed people are kept for the audit trail and can't sign in.")}</p>
       <div className="grid gap-1 small"><span className="muted">{tr("SCIM URL")}</span><code style={{ overflowWrap: "anywhere" }}>{id.scim.base_url}</code></div>
       <p className="small m-0">{synced === 1 ? tr("1 person synced so far.") : tr("{0} people synced so far.", { 0: synced })}</p>
@@ -102,14 +102,14 @@ export function LdapCard({ id, onChange }: { id: Identity; onChange: () => void 
   const body = () => ({ ...f, ca_cert: f.ca_cert || null, group_base_dn: f.group_base_dn || null, bind_password: f.bind_password || undefined, email_domains: f.email_domains.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) });
   return (
     <div className="card">
-      <div className="spread"><h2>{tr("LDAP directory")}</h2>{!id.allowed && <Badge tone="warn">{tr("Enterprise and Cloud")}</Badge>}</div>
+      <div className="spread"><h2>{tr("LDAP directory")}</h2>{!(id.allowed_features?.ldap ?? id.allowed) && <Badge tone="warn">{tr("Enterprise and Cloud")}</Badge>}</div>
       {c && !editing ? (
         <>
           <p className="small">{tr("Passwords for {0} are checked against {1}. People still use their authenticator app or passkey here.", { 0: c.email_domains.join(", "), 1: c.url })} {c.jit_provisioning ? tr("New people get an account on first sign-in when one of their groups maps to a role.") : tr("People must be added here first.")}</p>
-          <div className="row"><button onClick={() => setEditing(true)} disabled={!id.allowed}>{tr("Edit")}</button><button className="danger" onClick={() => setRemoving(true)}>{tr("Remove")}</button></div>
+          <div className="row"><button onClick={() => setEditing(true)} disabled={!(id.allowed_features?.ldap ?? id.allowed)}>{tr("Edit")}</button><button className="danger" onClick={() => setRemoving(true)}>{tr("Remove")}</button></div>
           {removing && <TypedConfirm title={tr("Remove the LDAP directory")} word="remove" onClose={() => setRemoving(false)} onConfirm={async () => { await control("/v1/settings/ldap", { method: "DELETE" }); setRemoving(false); onChange(); }}>{tr("People from the directory won't be able to sign in until an admin sets them a password.")}</TypedConfirm>}
         </>
-      ) : !id.allowed ? (
+      ) : !(id.allowed_features?.ldap ?? id.allowed) ? (
         <p className="small muted">{tr("Check passwords against Active Directory, OpenLDAP or FreeIPA, with roles from directory groups. It comes with Enterprise and Onshore Cloud.")}</p>
       ) : (
         <>

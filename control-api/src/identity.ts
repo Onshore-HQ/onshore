@@ -3,16 +3,20 @@
 
 import { ApiError, db, newId } from "./lib.js";
 import { ROLES } from "./templates.js";
-import { edition, type Edition } from "./routes/locations.js";
+import { edition, has, needs, type Edition, type Level } from "./edition.js";
 
-/** Editions that may set up single sign-on, LDAP and SCIM. Change here to change the offer. */
-export const IDENTITY_EDITIONS: Edition[] = ["enterprise", "cloud"];
+/** Single sign-on and SCIM are Business; LDAP is Enterprise. Change here to change the offer. */
+export const IDENTITY_LEVEL: Record<"sso" | "scim" | "ldap", Level> = { sso: "business", scim: "business", ldap: "enterprise" };
 
-export async function requireIdentityEdition() {
+export async function requireIdentityEdition(feature: "sso" | "scim" | "ldap") {
   const ed = await edition();
-  if (!IDENTITY_EDITIONS.includes(ed)) throw new ApiError(403, "edition_required", "single sign-on, LDAP and SCIM need Enterprise or Onshore Cloud");
+  const level = IDENTITY_LEVEL[feature];
+  if (!has(ed, level)) throw needs(level, feature === "ldap" ? "LDAP" : feature === "sso" ? "single sign-on" : "SCIM");
   return ed;
 }
+
+/** What this edition may set up, for the Sign-in settings. */
+export const identityAllowed = (ed: Edition) => ({ sso: has(ed, "business"), scim: has(ed, "business"), ldap: has(ed, "enterprise") });
 
 export const publicOrigin = () => `https://${process.env.RV_HOST ?? "localhost"}${process.env.RV_PUBLIC_PORT ? `:${process.env.RV_PUBLIC_PORT}` : ""}`;
 

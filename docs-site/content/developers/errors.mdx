@@ -19,7 +19,8 @@ Quote the `request_id` when asking for help, and find it in [Service logs](/guid
 | `unauthenticated` | 401 | No token, an expired token, or a wrong signature |
 | `forbidden` | 403 | Your role doesn't allow this |
 | `policy_denied` | 403 | No access rule allows this |
-| `edition_required` | 403 | The feature needs Enterprise or Onshore Cloud |
+| `needs_business` | 403 | The feature needs Onshore Business or above. Paid data API features are free on test vaults |
+| `needs_enterprise` | 403 | The feature needs Onshore Enterprise or Onshore Cloud |
 | `token_not_found` | 404 | Unknown or expired token |
 | `duplicate_value` | 409 | The value already exists where it must be unique |
 | `validation_failed` | 422 | The value fails its field's format check |

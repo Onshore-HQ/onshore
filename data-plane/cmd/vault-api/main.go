@@ -13,9 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	_ "onshore/data-plane/ee/hsm"      // paid: HSM key backend (Enterprise, -tags hsm)
+	_ "onshore/data-plane/ee/vaultapi" // paid: Business routes (see ee/LICENSE)
 	"onshore/data-plane/internal/auth"
 	"onshore/data-plane/internal/httpapi"
 	"onshore/data-plane/internal/keys"
+	"onshore/data-plane/internal/license"
 	"onshore/data-plane/internal/store"
 	"onshore/data-plane/internal/tlsutil"
 	"onshore/data-plane/internal/vault"
@@ -50,6 +53,11 @@ func main() {
 	k, err := keys.Open(must("KEY_BACKEND"), os.Getenv("RV_ENV") == "production")
 	if err != nil {
 		log.Fatal(err)
+	}
+	license.LogStartup("vault-api")
+	// An HSM without Enterprise only warns: a licence never cuts access to data.
+	if k.Name() == "pkcs11" && !license.Current().Has(license.Enterprise) {
+		log.Print("vault-api: the HSM key backend is part of Onshore Enterprise; this install has no Enterprise licence")
 	}
 	seed, err := base64.StdEncoding.DecodeString(must("RV_TOKEN_SIGNING_SEED"))
 	if err != nil || len(seed) != ed25519.SeedSize {

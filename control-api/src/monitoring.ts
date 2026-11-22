@@ -1,6 +1,6 @@
 import { fetch as tlsFetch } from "undici";
 import { db, internalAgent, vault } from "./lib.js";
-import { broadcast } from "./webhooks.js";
+import { broadcast } from "./ee/webhooks.js";
 
 /** Every service this API can reach. Services answer on /healthz over the internal network. */
 const COMPONENTS: Record<string, string> = {

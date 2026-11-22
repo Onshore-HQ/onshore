@@ -6,7 +6,7 @@ process.env.DATABASE_URL ??= "postgres://unused:unused@127.0.0.1:1/unused";
 process.env.RV_INTERNAL_TOKEN ??= "x".repeat(32);
 process.env.RV_USER_TOKEN_SEED ??= Buffer.alloc(32).toString("base64");
 process.env.RV_CONTROL_SECRET ??= "x".repeat(32);
-const { parseReport, sameOrigin, scriptsInHtml, scrubUrl } = await import("../src/pageprotect.js");
+const { parseReport, sameOrigin, scriptsInHtml, scrubUrl } = await import("../src/ee/pageprotect.js");
 
 test("a stored address loses its query, fragment and anything that looks like a value", () => {
   assert.equal(scrubUrl("https://cdn.x.ng/a/b.js?bvn=22333444558&x=1#frag"), "https://cdn.x.ng/a/b.js");

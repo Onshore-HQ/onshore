@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { computeStatus, DAY, FlowFacts, matchVendor, resolveCountry, scores, stableUuid, suggestRegion } from "../src/map/engine.js";
+import { computeStatus, DAY, FlowFacts, matchVendor, resolveCountry, scores, stableUuid, suggestRegion } from "../src/ee/map/engine.js";
 
 const now = new Date("2026-11-05T12:00:00Z");
 const ago = (days: number) => new Date(now.getTime() - days * DAY);

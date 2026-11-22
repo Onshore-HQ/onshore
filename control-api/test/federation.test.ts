@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reportSchema, sign } from "../src/federation-protocol.js";
+import { reportSchema, sign } from "../src/ee/federation-protocol.js";
 
 const report = { version: "dev", country: "GB", vaults: [{ id: "v_live_1", name: "Acme · United Kingdom", country: "GB", environment: "production", packs: ["everywhere", "gb"], fields: 9 }], detections_7d: { uk_nino: 12 }, reveals_7d: { plaintext: 1, masked: 4, denied: 0 } };
 

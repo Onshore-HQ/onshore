@@ -83,7 +83,7 @@ function IdentityCards() {
   if (!id.value) return id.error ? null : <Loading error={null} loading />;
   return (
     <>
-      {!id.value.allowed && <div className="note small">{tr("Single sign-on, LDAP and SCIM come with Enterprise and Onshore Cloud. Groups and roles, passwords and authenticator codes work in every edition.")}</div>}
+      {!id.value.allowed && <div className="note small">{tr("Single sign-on and SCIM come with Onshore Business, and LDAP with Enterprise. Groups and roles, passwords and authenticator codes work in every edition.")}</div>}
       <SsoCard allowed={id.value.allowed} />
       <GroupRolesCard id={id.value} roles={roles.value?.roles ?? []} onChange={id.reload} />
       <ScimCard id={id.value} onChange={id.reload} />

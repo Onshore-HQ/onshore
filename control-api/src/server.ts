@@ -1,35 +1,37 @@
 import fs from "node:fs";
 import Fastify from "fastify";
 import { db, env, sendError, verifyToken } from "./lib.js";
-import { pushSiem } from "./siem.js";
+import { pushSiem } from "./ee/siem.js";
 import { checkComponents } from "./monitoring.js";
-import { deliverWebhooks, enqueueWebhooks, purgeDeliveries } from "./webhooks.js";
-import { webhookRoutes } from "./routes/webhooks.js";
-import { pageProtectionRoutes, pageReportRoute } from "./routes/page-protection.js";
-import { scanAllPages } from "./pageprotect.js";
-import { adapterRoutes } from "./routes/adapters.js";
+import { deliverWebhooks, enqueueWebhooks, purgeDeliveries } from "./ee/webhooks.js";
+import { webhookRoutes } from "./ee/routes/webhooks.js";
+import { pageProtectionRoutes, pageReportRoute } from "./ee/routes/page-protection.js";
+import { scanAllPages } from "./ee/pageprotect.js";
+import { adapterRoutes } from "./ee/routes/adapters.js";
 import { authRoutes } from "./routes/auth.js";
 import { apiKeyFrom, setupRoutes } from "./routes/setup.js";
 import { importRoutes } from "./routes/imports.js";
 import { accountRoutes } from "./routes/accounts.js";
 import { emailAlerts } from "./mail.js";
-import { ssoRoutes } from "./routes/sso.js";
+import { ssoRoutes } from "./ee/routes/sso.js";
 import { identityRoutes } from "./routes/identity.js";
-import { scimRoutes } from "./routes/scim.js";
-import { packRoutes } from "./routes/packs.js";
+import { scimRoutes } from "./ee/routes/scim.js";
+import { packRoutes } from "./ee/routes/packs.js";
 import { evidenceRoutes } from "./routes/evidence.js";
-import { customEntityRoutes } from "./routes/custom-entities.js";
-import { gatewayRoutes } from "./routes/gateways.js";
+import { customEntityRoutes } from "./ee/routes/custom-entities.js";
+import { gatewayRoutes } from "./ee/routes/gateways.js";
 import { peopleRoutes } from "./routes/people.js";
-import { pipelineRoutes } from "./routes/pipelines.js";
+import { pipelineRoutes } from "./ee/routes/pipelines.js";
 import { policyRoutes } from "./routes/policies.js";
 import { vaultRoutes } from "./routes/vaults.js";
-import { edition, locationRoutes } from "./routes/locations.js";
-import { federationRoutes, REPORT_EVERY_MS } from "./federation.js";
-import { isMember, memberTick } from "./member.js";
-import { mapRoutes } from "./routes/map.js";
+import { locationRoutes } from "./routes/locations.js";
+import { edition, gated, has } from "./edition.js";
+import { reportRoutes } from "./ee/routes/reports.js";
+import { federationRoutes, REPORT_EVERY_MS } from "./ee/federation.js";
+import { isMember, memberTick } from "./ee/member.js";
+import { mapRoutes } from "./ee/routes/map.js";
 import { usageRoutes } from "./routes/usage.js";
-import { mapTick } from "./map/run.js";
+import { mapTick } from "./ee/map/run.js";
 
 const trusted = (process.env.RV_TRUSTED_PROXIES ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -78,24 +80,26 @@ await app.register(vaultRoutes);
 await app.register(locationRoutes);
 await app.register(policyRoutes);
 await app.register(peopleRoutes);
-await app.register(pipelineRoutes);
-await app.register(gatewayRoutes);
+await app.register(gated("business", "log pipelines", pipelineRoutes));
+await app.register(gated("business", "the AI gateway and HTTP proxy", gatewayRoutes));
 await app.register(ssoRoutes);
 await app.register(identityRoutes);
-await app.register(scimRoutes);
-await app.register(packRoutes);
-await app.register(adapterRoutes);
+await app.register(gated("business", "SCIM", scimRoutes));
+await app.register(gated("business", "your own country packs", packRoutes));
+await app.register(gated("business", "ticket adapters", adapterRoutes));
 await app.register(evidenceRoutes);
+await app.register(gated("business", "evidence reports", reportRoutes, { all: true }));
 await app.register(usageRoutes);
-await app.register(customEntityRoutes);
-await app.register(webhookRoutes);
-await app.register(pageProtectionRoutes);
-await app.register(pageReportRoute);
-await app.register(mapRoutes);
+await app.register(gated("business", "your own data types", customEntityRoutes));
+await app.register(gated("business", "webhooks", webhookRoutes));
+await app.register(gated("business", "page protection", pageProtectionRoutes));
+await app.register(gated("business", "page protection", pageReportRoute));
+await app.register(gated("business", "the residency map", mapRoutes));
 await app.register(async (a) => federationRoutes(a, edition));
+// Paid features (src/ee) are under the Onshore Commercial Licence; see ee/LICENSE.
 
 env("RV_BOOTSTRAP_TOKEN");
-setInterval(() => pushSiem().catch(() => app.log.warn("SIEM push failed; retrying")), 30_000).unref();
+setInterval(async () => { if (has(await edition(), "enterprise")) await pushSiem().catch(() => app.log.warn("SIEM push failed; retrying")); }, 30_000).unref();
 // A tick that overruns must not start a second one on top of it.
 const every = (ms: number, name: string, fn: () => Promise<unknown>) => {
   let running = false;
@@ -105,14 +109,14 @@ const every = (ms: number, name: string, fn: () => Promise<unknown>) => {
     try { await fn(); } catch { app.log.warn(`${name} failed; retrying`); } finally { running = false; }
   }, ms).unref();
 };
-every(5_000, "webhook delivery", async () => { await enqueueWebhooks(); await deliverWebhooks(); });
+every(5_000, "webhook delivery", async () => { if (!has(await edition(), "business")) return; await enqueueWebhooks(); await deliverWebhooks(); });
 every(Number(process.env.RV_MONITOR_INTERVAL_MS ?? 30_000), "health check", checkComponents);
 every(3_600_000, "webhook history purge", purgeDeliveries);
 every(Number(process.env.RV_MAIL_ALERT_INTERVAL_MS ?? 60_000), "alert email", emailAlerts);
 // The spec asks for hourly at least. Each run only writes what changed, so a minute is cheap and
 // a new flow shows within the five minutes it allows.
-every(Number(process.env.RV_MAP_INTERVAL_MS ?? 60_000), "residency map", mapTick);
-every(Number(process.env.RV_PAGE_SCAN_INTERVAL_MS ?? 900_000), "page scan", scanAllPages);
+every(Number(process.env.RV_MAP_INTERVAL_MS ?? 60_000), "residency map", async () => { if (has(await edition(), "business")) await mapTick(); });
+every(Number(process.env.RV_PAGE_SCAN_INTERVAL_MS ?? 900_000), "page scan", async () => { if (has(await edition(), "business")) await scanAllPages(); });
 // A member install reports to its primary; the first round joins it.
 if (isMember()) {
   memberTick().catch(() => app.log.warn("first report to the primary install failed; retrying"));

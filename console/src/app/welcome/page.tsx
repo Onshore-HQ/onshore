@@ -15,14 +15,16 @@ interface Law { name: string; effect: string; note?: string; sources: string[] }
 interface Market { id: string; label: string; laws: string[]; pack: string }
 interface Pack { name: string; ready: boolean; examples: [string, string][] }
 interface Catalog { checked: string; countries: Country[]; all_countries?: { code: string; name: string; built_in: boolean }[]; laws: Record<string, Law>; markets: Market[]; packs: Record<string, Pack>; sectors: { id: string; label: string }[]; cloud_regions: string[] }
-interface SetupState { needed: boolean; edition: "free" | "enterprise" | "cloud"; install_country: string | null; organisation: string; catalog: Catalog }
+interface SetupState { needed: boolean; edition: "free" | "business" | "enterprise" | "cloud" | "development"; install_country: string | null; organisation: string; catalog: Catalog }
 interface Result { vaults: { id: string; country: string }[]; planned: { country: string; reason: "enterprise_install" | "cloud_region" | "cloud_waitlist" }[]; links: { country: string; command?: string }[] }
 
 const STEPS = ["Your organisation", "Where data stays", "Laws", "Personal data", "Check and create"];
 const REGIONS = ["All", "Africa", "Middle East", "Europe", "Americas", "Asia-Pacific", "Other countries"];
 const EDITION: Record<SetupState["edition"], { name: string; text: string }> = {
-  free: { name: "Self-hosted, free", text: "Open source. This install keeps data in one country." },
-  enterprise: { name: "Self-hosted Enterprise", text: "Vaults in other countries run on their own installs, linked to this console." },
+  free: { name: "Onshore Community", text: "Open source. This install keeps data in one country." },
+  business: { name: "Onshore Business", text: "This install keeps data in one country, with every Business feature." },
+  development: { name: "Development build", text: "Every feature is on, for development and testing only. Vaults in other countries run on their own installs." },
+  enterprise: { name: "Onshore Enterprise", text: "Vaults in other countries run on their own installs, linked to this console." },
   cloud: { name: "Onshore Cloud", text: "We run a vault for you in each country where we have a region." },
 };
 
@@ -118,6 +120,7 @@ export default function Welcome() {
   const c = state?.catalog;
   const by = useMemo(() => Object.fromEntries((c?.countries ?? []).map((x) => [x.code, x])), [c]);
   const self = state?.edition !== "cloud";
+  const single = state?.edition === "free" || state?.edition === "business";
   const install = state?.install_country ?? installPick;
 
   const laws = useMemo(() => {
@@ -152,25 +155,25 @@ export default function Welcome() {
   const vaultNote = (code: string): [string, boolean] => {
     const x = by[code]!;
     if (self && code === install) return [tr("Created on this install, in {0}", { 0: x.city }), false];
-    if (state.edition === "free") return ["The free edition keeps one country per install", true];
+    if (single) return ["This edition keeps one country per install", true];
     if (self) return [tr("Needs its own Enterprise install in {0}, linked to this console. You get its join command next.", { 0: x.name }), true];
     if (code === install) return [tr("Hosted by Onshore Cloud in {0}", { 0: x.name }), false];
     if (c.cloud_regions.includes(code)) return [tr("An Onshore Cloud region in {0}, set up for you", { 0: x.name }), false];
     return [tr("Onshore Cloud has no {0} region yet: saved on the waitlist", { 0: x.name }), true];
   };
-  const tooMany = state.edition === "free" && countries.length > 1;
+  const tooMany = single && countries.length > 1;
   let blocker = "";
   if (step === 0 && !home) blocker = "Choose your country.";
   if (step === 0 && org.trim().length < 2) blocker = "Give your organisation a name.";
   if (step === 1) {
     if (self && !install) blocker = "Say which country this install keeps data in.";
     else if (countries.length === 0) blocker = "Pick at least one country.";
-    else if (tooMany) blocker = "The free edition keeps one country per install. Remove the others to continue.";
+    else if (tooMany) blocker = "This edition keeps one country per install. Remove the others to continue.";
     else if (!confirmed) blocker = "Confirm the warning above to continue.";
   }
   const q = query.trim().toLowerCase();
   const visible = c.countries.filter((x) => (region === "All" || x.region === region) && (!q || x.name.toLowerCase().includes(q) || x.code.toLowerCase() === q));
-  const createCount = countries.filter((k) => k === install || (!self && c.cloud_regions.includes(k)) || state.edition === "enterprise").length;
+  const createCount = countries.filter((k) => k === install || (!self && c.cloud_regions.includes(k)) || state.edition === "enterprise" || state.edition === "development").length;
 
   const finish = async () => {
     setBusy(true);
@@ -253,7 +256,7 @@ export default function Welcome() {
               </div>
               <div className="grid gap-3">
                 <div className="flex flex-wrap items-end gap-3">
-                  <label className="field" style={{ flex: "1 1 260px" }}><span>{state.edition === "free" ? tr("Countries") : tr("Add a country")}</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Search, for example Kenya or Germany")} /></label>
+                  <label className="field" style={{ flex: "1 1 260px" }}><span>{single ? tr("Countries") : tr("Add a country")}</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Search, for example Kenya or Germany")} /></label>
                   <div role="tablist" aria-label={tr("Region")} className="flex flex-wrap gap-1.5">{REGIONS.map((r) => <Pill key={r} on={region === r} onClick={() => setRegion(r)}>{tr(r)}</Pill>)}</div>
                 </div>
                 <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
@@ -288,7 +291,7 @@ export default function Welcome() {
               {tooMany && (
                 <div className="grid gap-2 rounded-lg border p-4" style={{ borderColor: "var(--primary)", background: "var(--info-soft)" }}>
                   <b>{tr("More than one country needs Enterprise or Onshore Cloud")}</b>
-                  <span className="text-sm">{tr("The free edition keeps one country per install. Enterprise links installs in several countries under one console and one audit trail; Onshore Cloud runs them for you.")}</span>
+                  <span className="text-sm">{tr("Community and Business keep one country per install. Enterprise links installs in several countries under one console and one audit trail; Onshore Cloud runs them for you.")}</span>
                   <div className="flex flex-wrap gap-2"><a className="btn primary" href="https://onshorevault.com/contact" target="_blank" rel="noreferrer">{tr("Talk to us about Enterprise")}</a><button type="button" onClick={() => setCountries([install])}>{tr("Keep only")} {by[install]?.name}</button></div>
                 </div>
               )}

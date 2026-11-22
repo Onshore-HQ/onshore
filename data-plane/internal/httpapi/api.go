@@ -18,10 +18,7 @@ import (
 	"onshore/data-plane/internal/audit"
 	"onshore/data-plane/internal/auth"
 	"onshore/data-plane/internal/detect"
-	"onshore/data-plane/internal/cloak"
-	"onshore/data-plane/internal/gateway"
 	"onshore/data-plane/internal/license"
-	"onshore/data-plane/internal/logproc"
 	"onshore/data-plane/internal/mask"
 	"onshore/data-plane/internal/policy"
 	"onshore/data-plane/internal/vault"
@@ -29,6 +26,9 @@ import (
 
 // MaxBatch is the largest tokenize or detokenize batch.
 const MaxBatch = 500
+
+// MaxDetectText bounds the text one detect call scans (1 MiB).
+const MaxDetectText = 1 << 20
 
 // MaxBody bounds request bodies.
 const MaxBody = 8 << 20
@@ -65,36 +65,15 @@ func (s *Server) Handler() http.Handler {
 	d("GET /v1/vaults/{vault}/records/{id}", s.getRecord)
 	d("PUT /v1/vaults/{vault}/tokens/{token}", s.updateValue)
 	d("POST /v1/vaults/{vault}/lookup", s.lookup)
-	d("POST /v1/vaults/{vault}/subjects/search", s.listSubjects)
-	d("GET /v1/vaults/{vault}/subjects/{id}", s.getSubject)
 	d("DELETE /v1/vaults/{vault}/subjects/{id}", s.eraseSubject)
-	d("GET /v1/vaults/{vault}/subjects/{id}/export", s.exportSubject)
-	d("POST /v1/vaults/{vault}/subjects/{id}/restrict", s.restrictSubject)
 	d("POST /v1/detect", s.detect)
-	d("POST /v1/vaults/{vault}/flows/{flow}/check", s.flowCheck)
-	d("POST /v1/vaults/{vault}/client-tokens", s.clientTokenMint)
 	d("POST /v1/vaults/{vault}/resident/check", s.residentCheck)
 	d("POST /v1/resident/compare", s.residentCompare)
-	d("POST /v1/vaults/{vault}/cloak", s.cloak)
-	d("POST /v1/vaults/{vault}/uncloak", s.uncloak)
-	d("DELETE /v1/vaults/{vault}/twins/{id}", s.deleteTwin)
-
-	// Secure components. These authenticate by client token, not by bearer.
-	mux.HandleFunc("GET /embed/rv.js", s.embedStatic("rv.js", "text/javascript; charset=utf-8", true))
-	mux.HandleFunc("GET /embed/rv-watch.js", s.embedStatic("rv-watch.js", "text/javascript; charset=utf-8", true))
-	mux.HandleFunc("GET /embed/frame.js", s.embedStatic("frame.js", "text/javascript; charset=utf-8", false))
-	mux.HandleFunc("GET /embed/frame.css", s.embedStatic("frame.css", "text/css; charset=utf-8", false))
-	mux.HandleFunc("GET /embed/frame/{vault}", s.embedFrame)
-	mux.HandleFunc("POST /embed/v1/describe", s.embedDescribe)
-	mux.HandleFunc("POST /embed/v1/collect", s.embedCollect)
-	mux.HandleFunc("POST /embed/v1/reveal", s.embedReveal)
 
 	i := func(pattern string, h http.HandlerFunc) { mux.HandleFunc(pattern, s.internal(h)) }
 	i("POST /internal/policy/compile", s.policyCompile)
 	i("POST /internal/policy/simulate", s.policySimulate)
 	i("POST /internal/fields/preview", s.fieldPreview)
-	i("POST /internal/logs/tokenize", s.logsTokenize)
-	i("POST /internal/logs/preview", s.logsPreview)
 	i("POST /internal/audit/verify", s.auditVerify)
 	i("POST /internal/audit/sign", s.auditSign)
 	i("POST /internal/audit/append", s.auditAppend)
@@ -105,24 +84,7 @@ func (s *Server) Handler() http.Handler {
 	i("POST /internal/licence", s.licence)
 	i("POST /internal/redact", s.redact)
 	i("POST /internal/geo/country", s.geoCountry)
-	i("POST /internal/gateway/reveal", s.gatewayReveal)
-	i("POST /internal/gateway/decide", s.gatewayDecide)
-	i("POST /internal/gateway/proxy-preview", s.proxyPreview)
-	i("POST /internal/gateway/ai-preview", s.aiPreview)
-	i("POST /internal/gateway/file", s.gatewayFile)
-	i("POST /internal/cloak/twin", s.cloakTwinSave)
-	i("POST /internal/cloak/options", s.cloakOptions)
-	i("POST /internal/rulesets/versions", s.rulesetVersions)
-	i("POST /internal/rulesets/snapshot", s.rulesetSnapshot)
-	i("POST /internal/custom/check", s.customCheck)
-	i("POST /internal/custom/bench", s.customBench)
-	i("POST /internal/custom/samples/add", s.customSamplesAdd)
-	i("POST /internal/custom/samples/delete", s.customSamplesDelete)
-	i("POST /internal/custom/samples/run", s.customSamplesRun)
-	i("POST /internal/custom/try", s.customTry)
-	i("POST /internal/custom/values", s.customValues)
-	i("POST /internal/custom/benchmark", s.customBenchmark)
-	i("POST /internal/custom/quick-bench", s.customQuickBench)
+	s.applyExtensions(mux)
 	return s.middleware(mux)
 }
 
@@ -447,31 +409,6 @@ func (s *Server) lookup(w http.ResponseWriter, r *http.Request, c vault.Caller) 
 	return nil
 }
 
-func (s *Server) listSubjects(w http.ResponseWriter, r *http.Request, c vault.Caller) error {
-	var q vault.SubjectQuery
-	if err := decode(r, &q); err != nil {
-		return err
-	}
-	if q.Offset < 0 {
-		q.Offset = 0
-	}
-	res, total, err := s.Vault.ListSubjects(r.Context(), c, r.PathValue("vault"), q)
-	if err != nil {
-		return err
-	}
-	writeJSON(w, 200, map[string]any{"subjects": res, "total": total})
-	return nil
-}
-
-func (s *Server) getSubject(w http.ResponseWriter, r *http.Request, c vault.Caller) error {
-	d, err := s.Vault.GetSubject(r.Context(), c, r.PathValue("vault"), r.PathValue("id"))
-	if err != nil {
-		return err
-	}
-	writeJSON(w, 200, d)
-	return nil
-}
-
 func (s *Server) eraseSubject(w http.ResponseWriter, r *http.Request, c vault.Caller) error {
 	purpose := r.Header.Get("X-RV-Purpose")
 	if err := requirePurpose(purpose); err != nil {
@@ -482,37 +419,6 @@ func (s *Server) eraseSubject(w http.ResponseWriter, r *http.Request, c vault.Ca
 		return err
 	}
 	writeJSON(w, 200, map[string]any{"erased_records": n, "request_id": c.RequestID})
-	return nil
-}
-
-func (s *Server) exportSubject(w http.ResponseWriter, r *http.Request, c vault.Caller) error {
-	purpose := r.Header.Get("X-RV-Purpose")
-	if err := requirePurpose(purpose); err != nil {
-		return err
-	}
-	res, err := s.Vault.ExportSubject(r.Context(), c, r.PathValue("vault"), r.PathValue("id"), purpose)
-	if err != nil {
-		return err
-	}
-	writeJSON(w, 200, map[string]any{"subject_id": r.PathValue("id"), "fields": res, "request_id": c.RequestID})
-	return nil
-}
-
-func (s *Server) restrictSubject(w http.ResponseWriter, r *http.Request, c vault.Caller) error {
-	var body struct {
-		Restricted bool   `json:"restricted"`
-		Purpose    string `json:"purpose"`
-	}
-	if err := decode(r, &body); err != nil {
-		return err
-	}
-	if err := requirePurpose(body.Purpose); err != nil {
-		return err
-	}
-	if err := s.Vault.RestrictSubject(r.Context(), c, r.PathValue("vault"), r.PathValue("id"), body.Restricted, body.Purpose); err != nil {
-		return err
-	}
-	writeJSON(w, 200, map[string]any{"restricted": body.Restricted})
 	return nil
 }
 
@@ -529,7 +435,7 @@ func (s *Server) detect(w http.ResponseWriter, r *http.Request, c vault.Caller) 
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	if len(body.Text) > logproc.MaxLeafBytes {
+	if len(body.Text) > MaxDetectText {
 		return &vault.Error{Status: 400, Code: "invalid_request", Message: "text exceeds 1 MiB"}
 	}
 	if body.Tokenize && body.Vault == "" {
@@ -733,104 +639,6 @@ func (s *Server) fieldPreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, res)
 }
 
-func (s *Server) logsTokenize(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Vault    string         `json:"vault"`
-		Pipeline string         `json:"pipeline"`
-		Module   string         `json:"module"`
-		Items    []logproc.Item `json:"items"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	if err := tooBig(len(body.Items)); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	v, err := s.Vault.Vault(r.Context(), body.Vault)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	tokens := make([]string, len(body.Items))
-	var items []vault.TokenizeItem
-	var pos []int
-	for i, it := range body.Items {
-		name := it.Field
-		if name == "" {
-			name = v.DeterministicFieldForEntity(it.Entity)
-		}
-		if name != "" {
-			items = append(items, vault.TokenizeItem{Field: name, Value: it.Value})
-			pos = append(pos, i)
-		}
-	}
-	if len(items) > 0 {
-		module := body.Module
-		if module == "" {
-			module = "logs"
-		}
-		c := vault.Caller{TenantID: v.TenantID, PrincipalID: module + ":" + body.Pipeline, Kind: "pipeline", Module: module, System: true, RequestID: requestID(r)}
-		// continue_on_error: a value that fails validation is masked by the caller.
-		res, err := s.Vault.Tokenize(r.Context(), c, body.Vault, items, true, "tokenize")
-		if err != nil {
-			writeErr(w, r, err)
-			return
-		}
-		for j, it := range res {
-			tokens[pos[j]] = it.Token
-		}
-	}
-	writeJSON(w, 200, map[string]any{"tokens": tokens})
-}
-
-type previewTokenizer struct{}
-
-func (previewTokenizer) Tokenize(_ context.Context, _, _ string, items []logproc.Item) ([]string, error) {
-	out := make([]string, len(items))
-	for i, it := range items {
-		out[i] = vault.NewToken(it.Entity, "opaque")
-	}
-	return out, nil
-}
-
-// logsPreview shows exactly what a pipeline would forward, without vaulting.
-func (s *Server) logsPreview(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Sample    string            `json:"sample"`
-		Actions   map[string]string `json:"action_per_type"`
-		Entities  []string          `json:"entity_types"`
-		Sensitive []string          `json:"sensitive_paths"`
-		Vault     string            `json:"vault_id"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	p := &logproc.Pipeline{Mode: "enforcing", Actions: body.Actions, EntityTypes: map[string]bool{}, SensitivePaths: logproc.ParseSensitivePaths(body.Sensitive)}
-	for _, e := range body.Entities {
-		p.EntityTypes[e] = true
-	}
-	pl := logproc.ParseBody([]byte(body.Sample))
-	pr := &logproc.Processor{Engine: s.Vault.Engine, Rules: staticRules{s.previewRules(body.Vault)}, Tokenizer: previewTokenizer{}}
-	o, err := pr.Process(r.Context(), p, pl.Leaves)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	b, err := pl.Encode(o.Dropped)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	counts := map[string]int64{}
-	for k, v := range o.Counts {
-		counts[k[0]+":"+k[1]] = v
-	}
-	writeJSON(w, 200, map[string]any{"after": string(b), "counts": counts})
-}
-
 func (s *Server) auditVerify(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TenantID string `json:"tenant_id"`
@@ -1007,9 +815,10 @@ func (s *Server) sandboxSeed(w http.ResponseWriter, r *http.Request) {
 
 // licence reports the installed licence, checked offline against the built-in key.
 func (s *Server) licence(w http.ResponseWriter, r *http.Request) {
+	st := license.Current()
 	blob := os.Getenv("RV_LICENCE")
 	if blob == "" {
-		writeJSON(w, 200, map[string]any{"installed": false})
+		writeJSON(w, 200, map[string]any{"installed": false, "edition": st.Edition, "note": st.Note})
 		return
 	}
 	key, err := license.BuiltInKey()
@@ -1018,101 +827,10 @@ func (s *Server) licence(w http.ResponseWriter, r *http.Request) {
 		l, err = license.Verify(blob, key)
 	}
 	if err != nil {
-		writeJSON(w, 200, map[string]any{"installed": true, "valid": false})
+		writeJSON(w, 200, map[string]any{"installed": true, "valid": false, "edition": st.Edition, "note": st.Note})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"installed": true, "valid": true, "customer": l.Customer, "modules": l.Modules, "seats": l.Seats, "max_records": l.MaxRecords, "expires_at": l.ExpiresAt, "expired": l.Expired(time.Now())})
-}
-
-// caller authenticates the end user behind a gateway request.
-func (s *Server) gatewayCaller(r *http.Request, token, ip, module string) (vault.Caller, error) {
-	c, err := s.Auth.AuthenticateToken(r.Context(), token, ip)
-	if err != nil {
-		return vault.Caller{}, err
-	}
-	c.Module, c.RequestID = module, requestID(r)
-	return c, nil
-}
-
-// gatewayReveal detokenizes for a gateway, as the end user whose token it carries.
-func (s *Server) gatewayReveal(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Vault       string   `json:"vault"`
-		CallerToken string   `json:"caller_token"`
-		SourceIP    string   `json:"source_ip"`
-		Module      string   `json:"module"`
-		Purpose     string   `json:"purpose"`
-		Tokens      []string `json:"tokens"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	c, err := s.gatewayCaller(r, body.CallerToken, body.SourceIP, body.Module)
-	if err != nil {
-		writeJSON(w, 401, map[string]any{"error": map[string]string{"code": "unauthenticated", "message": "caller token rejected"}})
-		return
-	}
-	res, err := s.Vault.Detokenize(r.Context(), c, body.Vault, body.Tokens, body.Purpose, true)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"results": res})
-}
-
-// gatewayDecide answers what a caller may see of each entity type in an AI reply.
-// The values sit in the gateway's memory for one request; only the decision and an
-// audit event pass through here.
-func (s *Server) gatewayDecide(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Vault       string         `json:"vault"`
-		Route       string         `json:"route"`
-		CallerToken string         `json:"caller_token"`
-		SourceIP    string         `json:"source_ip"`
-		Purpose     string         `json:"purpose"`
-		Entities    map[string]int `json:"entities"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	c, err := s.gatewayCaller(r, body.CallerToken, body.SourceIP, "ai")
-	if err != nil {
-		writeJSON(w, 401, map[string]any{"error": map[string]string{"code": "unauthenticated", "message": "caller token rejected"}})
-		return
-	}
-	out, err := s.Vault.DecideRestore(r.Context(), c, body.Vault, body.Route, body.Purpose, body.Entities)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"decisions": out})
-}
-
-// proxyPreview shows a route's rules applied to samples. Nothing is stored.
-func (s *Server) proxyPreview(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Route    gateway.ProxyRoute `json:"route"`
-		Request  string             `json:"request"`
-		Response string             `json:"response"`
-		Vault    string             `json:"vault_id"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	t := &gateway.Transformer{Engine: s.Vault.Engine, Rules: staticRules{s.previewRules(body.Vault)}, Tokenize: gateway.ExampleTokens}
-	reqOut, _, err1 := t.Request(r.Context(), &body.Route, []byte(body.Request))
-	respOut, _, err2 := t.Response(r.Context(), &body.Route, []byte(body.Response), "")
-	res := map[string]any{"request": string(reqOut), "response": string(respOut)}
-	if err1 != nil {
-		res["request_error"] = err1.Error()
-	}
-	if err2 != nil {
-		res["response_error"] = err2.Error()
-	}
-	writeJSON(w, 200, res)
+	writeJSON(w, 200, map[string]any{"installed": true, "valid": true, "customer": l.Customer, "modules": l.Modules, "seats": l.Seats, "max_records": l.MaxRecords, "expires_at": l.ExpiresAt, "expired": l.Expired(time.Now()), "edition": st.Edition, "note": st.Note})
 }
 
 func (s *Server) residentCompare(w http.ResponseWriter, r *http.Request, c vault.Caller) error {
@@ -1155,54 +873,4 @@ func (s *Server) residentCheck(w http.ResponseWriter, r *http.Request, c vault.C
 	}
 	writeJSON(w, 200, map[string]any{"result": ok, "request_id": c.RequestID})
 	return nil
-}
-
-func (s *Server) aiPreview(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Prompt  string        `json:"prompt"`
-		Reply   string        `json:"reply"`
-		Vault   string        `json:"vault_id"`
-		Options cloak.Options `json:"options"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	if err := cloak.Validate(body.Options); err != nil {
-		writeErr(w, r, &vault.Error{Status: 400, Code: "invalid_request", Message: err.Error()})
-		return
-	}
-	sent, reply, shown := gateway.PreviewAI(s.previewRules(body.Vault), body.Options, body.Prompt, body.Reply)
-	writeJSON(w, 200, map[string]string{"provider_receives": sent, "provider_reply": reply, "user_sees": shown})
-}
-
-func (s *Server) gatewayFile(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Vault       string         `json:"vault"`
-		CallerToken string         `json:"caller_token"`
-		SourceIP    string         `json:"source_ip"`
-		Purpose     string         `json:"purpose"`
-		Counts      map[string]int `json:"counts"`
-		Low         bool           `json:"low_confidence"`
-	}
-	if err := decode(r, &body); err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	c, err := s.gatewayCaller(r, body.CallerToken, body.SourceIP, "files")
-	if err != nil {
-		writeJSON(w, 401, map[string]any{"error": map[string]string{"code": "unauthenticated", "message": "caller token rejected"}})
-		return
-	}
-	ok, err := s.Vault.AuthorizeFile(r.Context(), c, body.Vault, body.Purpose, body.Counts, body.Low)
-	if err != nil {
-		var ae *vault.Error
-		if errors.As(err, &ae) && ae.Status == 403 {
-			writeJSON(w, 200, map[string]bool{"allowed": false})
-			return
-		}
-		writeErr(w, r, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"allowed": ok})
 }

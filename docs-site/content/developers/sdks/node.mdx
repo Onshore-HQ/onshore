@@ -176,6 +176,7 @@ try {
 | 400 | `invalid_request` | Malformed body, missing `purpose`, purpose over 500 characters, more than 500 items, unknown field, a check that doesn't suit the field | No |
 | 401 | `unauthenticated` | Bad signature, unknown or revoked key, expired assertion, reused `jti`, disabled account | No (the next call re-authenticates) |
 | 403 | `policy_denied` | No access rule allows this, or the caller's IP isn't on the key's allowlist. `policy` names the rule when one decided | No |
+| 403 | `needs_business` | A Business feature (cloaking, people search, export, restrict, flow checks, client tokens) on a Community install. Free on test vaults. See [Editions](/get-started/editions/) | No |
 | 404 | `token_not_found` | The token doesn't exist, was erased, or has expired (transient fields) | No |
 | 404 | `invalid_request` | Unknown vault, record, person or flow | No |
 | 404 | `not_found` | No such digital twin, or it has expired | No |

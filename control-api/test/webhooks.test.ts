@@ -7,7 +7,7 @@ process.env.DATABASE_URL ??= "postgres://unused:unused@127.0.0.1:1/unused";
 process.env.RV_INTERNAL_TOKEN ??= "x".repeat(32);
 process.env.RV_USER_TOKEN_SEED ??= Buffer.alloc(32).toString("base64");
 process.env.RV_CONTROL_SECRET ??= "x".repeat(32);
-const { auditPayload, classifyFailure, eventTypesFor, nextDelay, signature } = await import("../src/webhooks.js");
+const { auditPayload, classifyFailure, eventTypesFor, nextDelay, signature } = await import("../src/ee/webhooks.js");
 const { renderMetrics } = await import("../src/monitoring.js");
 
 const row = { seq: 7n, event_id: "e", occurred_at: new Date(0), vault_id: "v", principal_id: "p", principal_kind: "user", module: "api", action: "detokenize", field_id: "f", decision: "plaintext", policy_id: "pol", policy_version: 1, break_glass: false, request_id: "r" };

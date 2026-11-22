@@ -86,8 +86,8 @@ func (im *importer) post(path, token string, in, out any) error {
 
 type importResult struct {
 	Results []struct {
-		Index    int   `json:"index"`
-		Existing *bool `json:"existing"`
+		Index    int    `json:"index"`
+		Existing *bool  `json:"existing"`
 		Token    string `json:"token"`
 		Error    *struct {
 			Code string `json:"code"`

@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { edition, has, needs } from "../edition.js";
+import { advancedFeatures } from "../ee/advanced-rules.js";
 import { z } from "zod";
 import { ApiError, audit, badRequest, db, forbidden, newId, notFound, READ_CONFIG, requireRole, vault, WRITE } from "../lib.js";
 
@@ -31,6 +33,9 @@ export async function policyRoutes(app: FastifyInstance) {
   app.post("/v1/policies", async (req) => {
     const a = requireRole(req, ...WRITE);
     const b = z.object({ name: NAME, source: z.object({}).loose() }).parse(req.body);
+    // Existing rules keep working on every edition; saving new advanced ones needs Business.
+    const advanced = advancedFeatures(b.source);
+    if (advanced.length && !has(await edition(), "business")) throw needs("business", `Access rules with ${advanced.join(", ")}`);
     const latest = await db.policies.findFirst({ where: { tenant_id: a.tenantId, name: b.name }, orderBy: { version: "desc" } });
     const version = (latest?.version ?? 0) + 1;
     const { compiled } = await vault<{ compiled: object }>("/internal/policy/compile", { name: b.name, version, source: b.source });

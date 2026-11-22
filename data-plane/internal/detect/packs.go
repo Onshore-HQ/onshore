@@ -19,30 +19,30 @@ import (
 
 // Entity types from the country packs.
 const (
-	GhanaCard       EntityType = "ghana_card"
-	KenyaID         EntityType = "ke_national_id"
-	KenyaKRAPIN     EntityType = "ke_kra_pin"
-	SouthAfricaID   EntityType = "za_id"
-	EgyptID         EntityType = "eg_national_id"
-	EmiratesID      EntityType = "emirates_id"
-	SaudiID         EntityType = "sa_national_id"
-	QatarID         EntityType = "qa_id"
-	UKNINO          EntityType = "uk_nino"
-	UKNHS           EntityType = "uk_nhs"
-	UKBankAccount   EntityType = "uk_bank_account"
-	IBAN            EntityType = "iban"
-	EUVAT           EntityType = "eu_vat"
-	GermanTaxID     EntityType = "de_tax_id"
-	FrenchNIR       EntityType = "fr_nir"
-	USSSN           EntityType = "us_ssn"
-	USITIN          EntityType = "us_itin"
-	USRouting       EntityType = "us_routing"
-	CanadaSIN       EntityType = "ca_sin"
-	BrazilCPF       EntityType = "br_cpf"
-	IndiaAadhaar    EntityType = "in_aadhaar"
-	IndiaPAN        EntityType = "in_pan"
-	SingaporeNRIC   EntityType = "sg_nric"
-	PhoneIntl       EntityType = "phone"
+	GhanaCard     EntityType = "ghana_card"
+	KenyaID       EntityType = "ke_national_id"
+	KenyaKRAPIN   EntityType = "ke_kra_pin"
+	SouthAfricaID EntityType = "za_id"
+	EgyptID       EntityType = "eg_national_id"
+	EmiratesID    EntityType = "emirates_id"
+	SaudiID       EntityType = "sa_national_id"
+	QatarID       EntityType = "qa_id"
+	UKNINO        EntityType = "uk_nino"
+	UKNHS         EntityType = "uk_nhs"
+	UKBankAccount EntityType = "uk_bank_account"
+	IBAN          EntityType = "iban"
+	EUVAT         EntityType = "eu_vat"
+	GermanTaxID   EntityType = "de_tax_id"
+	FrenchNIR     EntityType = "fr_nir"
+	USSSN         EntityType = "us_ssn"
+	USITIN        EntityType = "us_itin"
+	USRouting     EntityType = "us_routing"
+	CanadaSIN     EntityType = "ca_sin"
+	BrazilCPF     EntityType = "br_cpf"
+	IndiaAadhaar  EntityType = "in_aadhaar"
+	IndiaPAN      EntityType = "in_pan"
+	SingaporeNRIC EntityType = "sg_nric"
+	PhoneIntl     EntityType = "phone"
 	// AmountMoney is an amount in any currency but naira, which Nigeria's pack reads as amount_ngn.
 	AmountMoney EntityType = "amount"
 )
@@ -85,7 +85,10 @@ var PackRules = map[string][]packRule{
 	"everywhere": {amountRule, intlPhoneRule},
 	// Nigerian landlines: Lagos 01, Abuja 09 and the state codes, which the mobile detector skips.
 	"ng": {
-		{PhoneNG, rx(`(?:\+234[ -]?(?:\(0\))?|\b0)(?:1|9|[2-8]\d)[ -]?\d{3}[ -]?\d{3,4}\b`), func(r string) bool { n := strings.TrimPrefix(digitsOnly(r), "234"); return len(n) >= 7 && len(n) <= 11 && !strings.HasPrefix(strings.TrimPrefix(n, "0"), "7") && !strings.HasPrefix(strings.TrimPrefix(n, "0"), "8") }, 0, 0.9, append([]string{"landline", "office", "line"}, phoneCues...)},
+		{PhoneNG, rx(`(?:\+234[ -]?(?:\(0\))?|\b0)(?:1|9|[2-8]\d)[ -]?\d{3}[ -]?\d{3,4}\b`), func(r string) bool {
+			n := strings.TrimPrefix(digitsOnly(r), "234")
+			return len(n) >= 7 && len(n) <= 11 && !strings.HasPrefix(strings.TrimPrefix(n, "0"), "7") && !strings.HasPrefix(strings.TrimPrefix(n, "0"), "8")
+		}, 0, 0.9, append([]string{"landline", "office", "line"}, phoneCues...)},
 	},
 	"gh": {
 		{PhoneIntl, rx(`\b03\d[ -]?\d{3}[ -]?\d{4}\b`), nil, 0, 0.9, append([]string{"landline", "office"}, phoneCues...)},

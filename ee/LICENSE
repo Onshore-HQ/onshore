@@ -3,8 +3,9 @@ Version 1.0
 
 Copyright (c) 2026 Flowsplus Services. All rights reserved.
 
-This licence applies to every file in the "ee" directory of the Onshore
-repository, and to any other file that states it is covered by the Onshore
+This licence applies to every file in any directory named "ee" in the Onshore
+repository, wherever it sits (for example data-plane/ee, control-api/src/ee and
+this directory), and to any other file that states it is covered by the Onshore
 Commercial Licence (together, the "Commercial Software"). The rest of the
 repository is licensed separately, as stated in its own LICENSE file.
 

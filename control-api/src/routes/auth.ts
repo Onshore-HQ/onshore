@@ -5,7 +5,7 @@ import { ApiError, audit, base32, clientIp, db, decryptSecret, encryptSecret, en
 import { notify } from "../mail.js";
 import { newRecoveryCodes, sha } from "./accounts.js";
 import { ROLES } from "../templates.js";
-import { ldapAuthenticate, ldapConfigFor } from "../ldap.js";
+import { ldapAuthenticate, ldapConfigFor } from "../ee/ldap.js";
 import { provision, rolesForGroups, setRoles } from "../identity.js";
 import { hasPasskeys, loginOptions, verifyLogin } from "../passkeys.js";
 import { edition } from "./locations.js";

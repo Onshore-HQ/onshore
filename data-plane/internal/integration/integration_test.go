@@ -25,9 +25,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	_ "onshore/data-plane/ee/vaultapi" // the paid routes, as in the vault-api binary
 	"onshore/data-plane/internal/auth"
 	"onshore/data-plane/internal/httpapi"
 	"onshore/data-plane/internal/keys"
+	"onshore/data-plane/internal/license"
 	"onshore/data-plane/internal/store"
 	"onshore/data-plane/internal/vault"
 )
@@ -154,7 +156,7 @@ func (e *env) exec(q string, args ...any) {
 func (e *env) newTenant() (string, string) {
 	tenant, v := id("t"), id("v")
 	e.exec(`INSERT INTO control.tenants(id,name) VALUES ($1,$1)`, tenant)
-	e.exec(`INSERT INTO control.vaults(id,tenant_id,name,environment) VALUES ($1,$2,'main','sandbox')`, v, tenant)
+	e.exec(`INSERT INTO control.vaults(id,tenant_id,name,environment,country) VALUES ($1,$2,'main','sandbox','GB')`, v, tenant)
 	for _, f := range [][]string{
 		{"bvn", "bvn", "deterministic", "opaque"}, {"phone", "phone_ng", "deterministic", "opaque"}, {"account_number", "nuban", "deterministic", "opaque"},
 		{"nin_fp", "nin", "deterministic", "format_preserving"}, {"note", "free_text", "cell", "opaque"}, {"otp", "free_text", "transient", "opaque"}, {"email", "email", "deterministic", "opaque"},
@@ -1008,5 +1010,34 @@ func TestAuditPurgeKeepsChainVerifiable(t *testing.T) {
 	// The application role still cannot delete directly.
 	if _, err := e.svc.Pool.Exec(e.ctx, `DELETE FROM events.audit_events WHERE tenant_id=$1`, e.tenant); err == nil {
 		t.Fatal("direct delete must stay refused")
+	}
+}
+
+// Paid routes refuse live vaults on an edition without them, and stay free on test vaults.
+func TestPaidFeaturesNeedTheEditionExceptOnTestVaults(t *testing.T) {
+	e, _ := ready(t)
+	dpo := e.user(e.tenant, "dpo")
+	live := id("v_live")
+	e.exec(`INSERT INTO control.vaults(id,tenant_id,name,environment,country) VALUES ($1,$2,'live','production','GB')`, live, e.tenant)
+
+	restore := license.SetForTest(license.State{Edition: license.Free})
+	defer restore()
+	var out struct {
+		Error struct{ Code string } `json:"error"`
+	}
+	if st := e.call("POST", "/v1/vaults/"+live+"/subjects/search", dpo.token, []byte(`{}`), &out); st != 403 || out.Error.Code != "needs_business" {
+		t.Fatalf("live vault on Community: %d %+v", st, out)
+	}
+	if st := e.call("POST", "/v1/vaults/"+e.vault+"/subjects/search", dpo.token, []byte(`{}`), nil); st != 200 {
+		t.Fatalf("test vault on Community should be allowed: %d", st)
+	}
+	// Erasure is the law's minimum and stays in every edition.
+	if st := e.call("DELETE", "/v1/vaults/"+live+"/subjects/nobody", dpo.token, nil, &out); st == 403 && out.Error.Code == "needs_business" {
+		t.Fatal("erasure must not need Business")
+	}
+
+	license.SetForTest(license.State{Edition: license.Business})
+	if st := e.call("POST", "/v1/vaults/"+live+"/subjects/search", dpo.token, []byte(`{}`), &out); st == 403 && out.Error.Code == "needs_business" {
+		t.Fatalf("Business should allow it: %+v", out)
 	}
 }

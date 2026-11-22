@@ -106,8 +106,8 @@ On the synthetic corpus, all entity types meet the spec's targets, at 100% after
 Onshore is open core. Copyright © 2026 Flowsplus Services.
 
 - **Core:** [GNU AGPL-3.0](LICENSE). Free to use, change and self-host. If you offer a changed version to others as a service, you must publish your changes.
-- **Paid features** in [`ee/`](ee/): [Onshore Commercial Licence](ee/LICENSE). Free for development and testing; production needs a subscription.
-- **Documentation** in `docs-site/content/`: [CC BY 4.0](docs-site/content/LICENSE).
+- **Paid features**, in every directory named `ee` (`data-plane/ee`, `control-api/src/ee`): [Onshore Commercial Licence](ee/LICENSE). Free for development, testing and test vaults; production needs a subscription. See [ee/README.md](ee/README.md).
+- **Documentation** in `docs-site/content/`: [CC BY 4.0](docs-site/CONTENT-LICENSE).
 - **SDKs:** Apache-2.0, in their own repositories.
 
 Can't use AGPL? Business and Enterprise subscriptions include the core under the commercial licence. See [NOTICE](NOTICE), [TRADEMARKS.md](TRADEMARKS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).

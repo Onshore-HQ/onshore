@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"onshore/data-plane/ee/logproc"
 	"onshore/data-plane/internal/detect"
-	"onshore/data-plane/internal/logproc"
 )
 
 type fakeSource struct {

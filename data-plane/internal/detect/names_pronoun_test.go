@@ -6,7 +6,7 @@ func TestNameSpanSkipsPronouns(t *testing.T) {
 	rs := BaseRuleSet(New(Config{})).WithPacks("NG", []string{"everywhere", "ng"})
 	for in, want := range map[string]string{
 		"Hi, I'm Sarah Johnson, my card": "Sarah Johnson",
-		"I've spoken to Chinedu Okafor": "Chinedu Okafor",
+		"I've spoken to Chinedu Okafor":  "Chinedu Okafor",
 		"Hi I'm Sarah Johnson":           "Sarah Johnson",
 	} {
 		var got []string

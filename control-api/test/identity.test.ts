@@ -29,7 +29,7 @@ test("IdP metadata gives the redirect URL and the signing certificate, not the e
 });
 
 import crypto from "node:crypto";
-import { canonical, fingerprint, verifyFile } from "../src/pack-file.js";
+import { canonical, fingerprint, verifyFile } from "../src/ee/pack-file.js";
 
 test("a pack file's signature covers every byte of its content", () => {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");

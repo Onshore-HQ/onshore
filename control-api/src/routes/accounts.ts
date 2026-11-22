@@ -4,7 +4,7 @@ import { z } from "zod";
 import { actor, ApiError, audit, badRequest, base32, clientIp, db, decryptSecret, encryptSecret, hashPassword, matchTotp, newId, notFound, READ_CONFIG, requireRole, verifyPassword, WRITE } from "../lib.js";
 import { MailError, mailFor, notify, sendWith } from "../mail.js";
 import { checkLock, passwordRule, recordFailure } from "./auth.js";
-import { checkAnyPassword } from "../ldap.js";
+import { checkAnyPassword } from "../ee/ldap.js";
 import { finishRegistration, registrationOptions } from "../passkeys.js";
 
 const INVITE_DAYS = 7;

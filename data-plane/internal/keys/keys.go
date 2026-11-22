@@ -35,8 +35,12 @@ type Service interface {
 	Name() string
 }
 
-// openPKCS11 is set by the hsm build, which needs cgo and the vendor's library.
+// openPKCS11 is set by the hsm build (data-plane/ee/hsm, built with -tags hsm),
+// which needs cgo and the vendor's library.
 var openPKCS11 func() (Service, error)
+
+// RegisterPKCS11 installs the HSM backend. Called from data-plane/ee/hsm.
+func RegisterPKCS11(f func() (Service, error)) { openPKCS11 = f }
 
 // Open selects a backend from configuration.
 func Open(backend string, production bool) (Service, error) {

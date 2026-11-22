@@ -46,21 +46,21 @@ func TestPacksFind(t *testing.T) {
 
 func TestPacksRefuse(t *testing.T) {
 	cases := []struct{ pack, text string }{
-		{"za", "ID number 8001015009088"},              // bad Luhn
-		{"ae", "Emirates ID 784-1990-1234567-9"},       // bad Luhn
-		{"gb", "NHS number 943 476 5918"},              // bad mod 11
-		{"gb", "NI number GB 12 34 56 C"},              // never issued
-		{"gb", "NI number QQ 12 34 56 C"},              // HMRC's example prefix, never issued
-		{"eu", "IBAN DE89 3704 0044 0532 0130 01"},     // bad mod 97
-		{"eu", "Steuer-ID 36 574 261 808"},             // bad check
-		{"us", "SSN 666-12-3456"},                      // never issued
-		{"us", "order 021000021"},                      // routing shape, no cue
-		{"br", "CPF 123.456.789-00"},                   // bad check digits
-		{"in", "Aadhaar 2345 6789 0123"},               // bad Verhoeff
-		{"sg", "NRIC S1234567A"},                       // bad check letter
-		{"ke", "invoice 12345678"},                     // 8 digits, no cue
-		{"qa", "order 28763412345"},                    // 11 digits, no cue
-		{"sa", "ref 2012345670"},                       // 10 digits, no cue
+		{"za", "ID number 8001015009088"},          // bad Luhn
+		{"ae", "Emirates ID 784-1990-1234567-9"},   // bad Luhn
+		{"gb", "NHS number 943 476 5918"},          // bad mod 11
+		{"gb", "NI number GB 12 34 56 C"},          // never issued
+		{"gb", "NI number QQ 12 34 56 C"},          // HMRC's example prefix, never issued
+		{"eu", "IBAN DE89 3704 0044 0532 0130 01"}, // bad mod 97
+		{"eu", "Steuer-ID 36 574 261 808"},         // bad check
+		{"us", "SSN 666-12-3456"},                  // never issued
+		{"us", "order 021000021"},                  // routing shape, no cue
+		{"br", "CPF 123.456.789-00"},               // bad check digits
+		{"in", "Aadhaar 2345 6789 0123"},           // bad Verhoeff
+		{"sg", "NRIC S1234567A"},                   // bad check letter
+		{"ke", "invoice 12345678"},                 // 8 digits, no cue
+		{"qa", "order 28763412345"},                // 11 digits, no cue
+		{"sa", "ref 2012345670"},                   // 10 digits, no cue
 	}
 	for _, c := range cases {
 		if got := scanPack(c.pack, c.text); len(got) != 0 {

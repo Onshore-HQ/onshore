@@ -33,6 +33,7 @@ The SDKs turn this into one error type: `VaultError` (Node, Python, PHP), `*vaul
 | 400 | `invalid_request` | Malformed body, missing or too-long purpose, unknown field, over 500 items, a check that doesn't suit the field, unknown option | No | Fix the code |
 | 401 | `unauthenticated` | Bad signature, unknown or revoked key, expired assertion, reused `jti`, disabled account, clock skew | No (the next call signs again) | Check the key and the server's clock |
 | 403 | `policy_denied` | No access rule allows this; or the IP isn't on the key's allowlist | No | Change access rules, or don't do it |
+| 403 | `needs_business`, `needs_enterprise` | A paid feature on an edition without it. Free on test vaults | No | See [Editions](/get-started/editions/) |
 | 404 | `token_not_found` | Token unknown, erased or expired; lookup found no match | No | Treat as "no such value" |
 | 404 | `invalid_request` | Unknown vault, record, person or flow | No | Check the ID |
 | 404 | `not_found` | Digital twin unknown or expired | No | Cloak again |

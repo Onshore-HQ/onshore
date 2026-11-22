@@ -29,10 +29,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"onshore/data-plane/ee/logproc"
 	"onshore/data-plane/internal/audit"
 	"onshore/data-plane/internal/detect"
 	"onshore/data-plane/internal/license"
-	"onshore/data-plane/internal/logproc"
 	"onshore/data-plane/internal/mask"
 	"onshore/data-plane/internal/store"
 	"onshore/data-plane/internal/tlsutil"
@@ -122,7 +122,6 @@ func installCountry(flagValue string, in io.Reader, out io.Writer) (string, erro
 	}
 	return v, nil
 }
-
 
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)

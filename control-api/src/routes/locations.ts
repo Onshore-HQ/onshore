@@ -3,24 +3,10 @@ import { z } from "zod";
 import { ApiError, actor, audit, badRequest, db, requireRole, vault, WRITE } from "../lib.js";
 import { ALL_COUNTRIES, builtInPack, cloudRegions, COUNTRIES, COUNTRY, countryName, isCountry, LAWS, LAWS_CHECKED, MARKETS, PACKS, SECTORS, suggestLaws, suggestPacks } from "../catalog.js";
 import { createVault, ownedVault } from "./vaults.js";
-import { planInstall } from "../federation.js";
+import { planInstall } from "../ee/federation.js";
 
-export type Edition = "free" | "enterprise" | "cloud";
-
-/**
- * How this install runs. Onshore Cloud says so in its environment; a self-hosted
- * install is Enterprise only with a valid licence that includes it.
- */
-export async function edition(): Promise<Edition> {
-  if (process.env.RV_CLOUD === "1") return "cloud";
-  try {
-    const lic = await vault<{ installed: boolean; valid?: boolean; modules?: string[] }>("/internal/licence", {});
-    if (lic.installed && lic.valid && lic.modules?.includes("enterprise")) return "enterprise";
-  } catch {
-    // The vault being unreachable must not upgrade anyone.
-  }
-  return "free";
-}
+export { edition, type Edition } from "../edition.js";
+import { edition } from "../edition.js";
 
 /**
  * The country this install keeps data in: set by `rv init --country`, else the one

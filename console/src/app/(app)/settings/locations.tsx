@@ -18,14 +18,14 @@ interface Catalog { checked: string; countries: Country[]; all_countries?: { cod
 interface Vault { id: string; name: string; country: string; packs: string[]; environment: string; time_zone: string | null }
 interface State {
   pack_laws?: { pack: string; pack_name: string; country_name: string; laws: { name: string; effect: string; source: string; checked_on: string }[] }[];
-  edition: "free" | "enterprise" | "cloud"; install_country: string | null;
+  edition: "free" | "business" | "enterprise" | "cloud" | "development"; install_country: string | null;
   home_country: string | null; sector: string | null; console_language: "en" | "fr"; console_format: string | null; time_zone: string;
   laws: string[]; markets: string[]; planned_countries: string[];
   suggested_laws: Record<string, string[]>; suggested_packs: string[];
   vaults: Vault[]; catalog: Catalog; waitlist?: { country: string; since: string; open: boolean }[];
 }
 
-const EDITION = { free: "Self-hosted, free", enterprise: "Self-hosted Enterprise", cloud: "Onshore Cloud" };
+const EDITION = { free: "Onshore Community", business: "Onshore Business", enterprise: "Onshore Enterprise", cloud: "Onshore Cloud", development: "Development build, for development and testing only" };
 const errText = (e: unknown) => (e instanceof Error ? e.message : "failed");
 const toggled = (xs: string[], x: string) => (xs.includes(x) ? xs.filter((y) => y !== x) : [...xs, x]);
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };

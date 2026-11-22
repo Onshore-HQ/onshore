@@ -3,8 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { ApiError, audit, badRequest, db, encryptSecret, newId, notFound, requireRole, WRITE } from "../lib.js";
 import { ROLES } from "../templates.js";
-import { IDENTITY_EDITIONS, publicOrigin, requireIdentityEdition } from "../identity.js";
-import { ldapTest } from "../ldap.js";
+import { identityAllowed, publicOrigin, requireIdentityEdition } from "../identity.js";
+import { ldapTest } from "../ee/ldap.js";
 import { edition } from "./locations.js";
 
 export const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
@@ -24,7 +24,7 @@ export async function identityRoutes(app: FastifyInstance) {
     ]);
     const { bind_password_enc: _p, ...ldapRest } = ldap ?? ({} as Record<string, unknown>);
     return {
-      edition: ed, allowed: IDENTITY_EDITIONS.includes(ed),
+      edition: ed, allowed: identityAllowed(ed).sso, allowed_features: identityAllowed(ed),
       mappings: mappings.map((m) => ({ group: m.group_name, roles: m.roles })),
       scim: { base_url: `${publicOrigin()}/control/scim/v2`, tokens: tokens.map((t) => ({ id: t.id, name: t.name, created_at: t.created_at, last_used_at: t.last_used_at })) },
       ldap: ldap ? ldapRest : null,
@@ -50,7 +50,7 @@ export async function identityRoutes(app: FastifyInstance) {
   app.post("/v1/settings/scim/tokens", async (req) => {
     const a = requireRole(req, ...WRITE);
     const b = z.object({ name: z.string().trim().min(1).max(80) }).parse(req.body);
-    await requireIdentityEdition();
+    await requireIdentityEdition("scim");
     if ((await db.scim_tokens.count({ where: { tenant_id: a.tenantId, revoked_at: null } })) >= 5) throw badRequest("revoke an old token first; five can be active");
     const token = `rvscim_${crypto.randomBytes(32).toString("base64url")}`;
     const id = newId("scim");
@@ -93,7 +93,7 @@ export async function identityRoutes(app: FastifyInstance) {
 
   app.put("/v1/settings/ldap", async (req) => {
     const a = requireRole(req, ...WRITE);
-    await requireIdentityEdition();
+    await requireIdentityEdition("ldap");
     const data = await ldapData(a.tenantId, req.body);
     // A domain can belong to only one directory across the install.
     const clash = await db.ldap_configs.findFirst({ where: { tenant_id: { not: a.tenantId }, email_domains: { hasSome: data.email_domains } } });

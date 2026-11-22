@@ -66,7 +66,7 @@ export function SsoCard({ allowed }: { allowed: boolean }) {
   const sp = value?.sp;
   return (
     <div className="card">
-      <div className="spread"><h2>{tr("Single sign-on")}</h2>{!allowed && <Badge tone="warn">{tr("Enterprise and Cloud")}</Badge>}</div>
+      <div className="spread"><h2>{tr("Single sign-on")}</h2>{!allowed && <Badge tone="warn">{tr("Business and above")}</Badge>}</div>
       {c && !editing ? (
         <>
           <p className="small">{tr("{0} with {1}, for {2}.", { 0: c.kind.toUpperCase(), 1: list.find((x) => x.id === c.provider)?.name ?? tr("your provider"), 2: c.email_domains.join(", ") })} {c.sso_only ? tr("Passwords are off.") : tr("Passwords still work.")} {c.jit_provisioning ? tr("New people get an account on first sign-in when one of their groups maps to a role.") : tr("People must be added here first.")}</p>

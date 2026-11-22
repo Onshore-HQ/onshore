@@ -60,14 +60,14 @@ function LinkModal({ countries, onClose, onDone, existing }: { countries: Countr
   );
 }
 
-export function InstallsCard({ edition, countries, admin, waitlist, onChange }: { edition: "free" | "enterprise" | "cloud"; countries: Country[]; admin: boolean; waitlist: { country: string; since: string; open: boolean }[]; onChange: () => void }) {
+export function InstallsCard({ edition, countries, admin, waitlist, onChange }: { edition: "free" | "business" | "enterprise" | "cloud" | "development"; countries: Country[]; admin: boolean; waitlist: { country: string; since: string; open: boolean }[]; onChange: () => void }) {
   const { value, error, reload } = useLoad<{ installs: Install[]; cloud_regions: string[] }>(() => control("/v1/installs"));
   const [linking, setLinking] = useState<Install | "new" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const name = (code: string) => countries.find((c) => c.code === code)?.name ?? code;
   const installs = value?.installs ?? [];
-  const canLink = edition !== "free";
-  if (edition === "free" && installs.length === 0) {
+  const canLink = edition === "enterprise" || edition === "cloud" || edition === "development";
+  if (!canLink && installs.length === 0) {
     return (
       <div className="card">
         <h2>{tr("Installs in other countries")}</h2>

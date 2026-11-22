@@ -6,7 +6,7 @@ RUN go mod download
 COPY data-plane/ .
 ARG VERSION=dev
 ARG LICENCE_PUBLIC_KEY=""
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X onshore/data-plane/internal/license.PublicKeyB64=${LICENCE_PUBLIC_KEY}" -o /out/ ./cmd/...
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X onshore/data-plane/internal/license.PublicKeyB64=${LICENCE_PUBLIC_KEY}" -o /out/ ./cmd/... ./ee/cmd/...
 
 FROM gcr.io/distroless/static-debian12:nonroot AS vault-api
 COPY --from=build /out/vault-api /vault-api

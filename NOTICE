@@ -4,11 +4,12 @@ Copyright (C) 2026 Flowsplus Services
 Onshore is licensed under the GNU Affero General Public License, version 3
 (see LICENSE), with these exceptions:
 
-- ee/                    Onshore Commercial Licence (see ee/LICENSE).
+- Any directory named   Onshore Commercial Licence (see ee/LICENSE), e.g.
+  ee/                    data-plane/ee and control-api/src/ee.
                          Free for development and testing; production use
                          needs a paid subscription.
 - docs-site/content/     Creative Commons Attribution 4.0 International
-                         (see docs-site/content/LICENSE).
+                         (see docs-site/CONTENT-LICENSE).
 
 Companies that can't use AGPL-licensed software can get the same code under
 the Onshore Commercial Licence with an Onshore Business or Enterprise
