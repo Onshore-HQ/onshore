@@ -1,0 +1,88 @@
+---
+title: Find a customer by value
+description: Check for duplicates, find customers by email or ID number, and search people, all without decrypting anything.
+---
+
+import { Callout } from "nextra/components";
+
+# Find a customer by value
+
+Your database holds tokens, so you can't `SELECT … WHERE national_id = ?` any more. The vault answers these questions instead, **without decrypting anything**: it keeps a keyed hash (a blind index) of each value in a searchable field and compares hashes.
+
+## Three ways to find
+
+| Need | Use | Returns |
+| --- | --- | --- |
+| "Which token is this value?" | `lookup(vault, field, value)` | The token, or `token_not_found` |
+| "Which person is this?" | `searchSubjects(vault, { query: value })` | Matching people |
+| "Does this value match the stored one?" | `residentCheck(..., "equals", value)` | `true` or `false` |
+
+With a **deterministic** field, you often don't need the vault at all: tokenizing the same value always gives the same token, and `tokenize` tells you whether it was already there (`existing: true`).
+
+## Duplicate check at sign-up
+
+```ts
+async function nationalIdInUse(nationalId: string): Promise<string | null> {
+  try {
+    const token = await vault.lookup(VAULT, "national_id", nationalId);
+    const row = await db.customers.findOne({ national_id_token: token });
+    return row?.id ?? null;
+  } catch (e) {
+    if (e instanceof VaultError && e.code === "token_not_found") return null;
+    throw e;
+  }
+}
+```
+
+The value is normalised before hashing, so `ab 12 34 56 c`, `AB-12-34-56-C` and `AB123456C` all find the same token.
+
+Alternatively, mark the field **unique** (on a cell field) and let `tokenize` refuse a duplicate with `409 duplicate_value`, which avoids a race between the check and the insert.
+
+## Sign in by email
+
+```ts
+async function findByEmail(email: string) {
+  try {
+    const token = await vault.lookup(VAULT, "email", email);
+    return db.customers.findOne({ email_token: token });
+  } catch (e) {
+    if (e instanceof VaultError && e.code === "token_not_found") return null;
+    throw e;
+  }
+}
+```
+
+Emails are lower-cased before hashing, so `Sam@Example.com` matches `sam@example.com`.
+
+## The rate limit
+
+<Callout type="warning">
+Lookups and resident checks are limited to **60 a minute per caller**. A lookup is a yes-or-no oracle: with no limit, someone holding a service account's key could test every possible 9-digit ID number and learn which are customers.
+</Callout>
+
+Design for it:
+
+- **Cache tokens, not answers about values.** Once you have a customer's token, store it with their row.
+- **Use deterministic tokenize for high-volume matching.** Matching a partner file of 100,000 IDs against your customers? Tokenize the file (deterministic field, `dryRun` off) and join tokens in your database. `tokenize` isn't rate-limited like `lookup`.
+- **Separate service accounts.** The limit is per caller, so your sign-in service and your back-office tool don't share one budget.
+- **Handle 429.** The SDKs retry it a few times; after that, return "try again shortly" rather than failing open.
+
+## Searchable fields
+
+A lookup works on a field that's either deterministic or marked **searchable** in the console. A searchable cell field keeps a blind index beside each value, so lookups work while tokens stay unlinkable. Not every field should be searchable: a blind index on a low-variety value (a date of birth, a postcode) helps an attacker guess. Make searchable only what you actually search by.
+
+## Searching people
+
+`searchSubjects` searches across people, not one field. `query` matches a token, your customer reference or an exact value:
+
+```ts
+const { subjects } = await vault.searchSubjects(VAULT, { query: "AB123456C" });
+// [{ id: "3f2c…", ref: "cust_1042", field_count: 4, reveals_30d: 2, restricted: false, … }]
+```
+
+Filters (`field_type`, `has_reveals`, `created_after`, …) make it useful for audits: "everyone holding an IBAN created before 2025", or "everyone revealed in the last 30 days". Needs the `search` action.
+
+## Next
+
+- [Decide without moving data](/developers/recipes/resident-checks/)
+- [Data subject requests](/developers/recipes/data-subject-requests/)

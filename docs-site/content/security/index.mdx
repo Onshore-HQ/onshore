@@ -1,0 +1,37 @@
+---
+title: Security model
+description: How Onshore protects values and keys, how it fails, and what it trusts.
+---
+
+# Security model
+
+## Principles
+
+- **Default deny.** With no access rule allowing it, the answer is no. Admins configure everything but see no values unless a rule says so.
+- **Fail closed.** If the key service is sealed or the vault can't be reached, values stay hidden and unprotected data isn't forwarded.
+- **Values never in logs.** Service logs, metrics, webhooks and audit entries record what happened, never a value.
+- **Two people for sensitive changes.** Access rules and data types need a second person to publish; admin resets need another admin; exceptions and emergency access need an approver.
+
+## Layers
+
+| Layer | Protection |
+| --- | --- |
+| **Encryption** | Each value encrypted on its own with AES-GCM under a data key; data keys wrapped by a master key in the key service or your HSM; master key unsealed by 3 of 5 key holders |
+| **Separation** | The data plane (values) and control plane (configuration) are separate services; the control plane's database role can't read the data tables at all |
+| **Transport** | TLS 1.3 at the edge; mutual TLS between services; internal endpoints unreachable from outside |
+| **Identity** | Two factors for every console sign-in; Ed25519 service-account keys with single-use assertions and IP allowlists; optional SSO, SCIM and LDAP |
+| **Access** | Access rules by role, data type, network, time, purpose and multi-factor; reveal limits per hour; reveal spike alerts |
+| **Audit** | Append-only, hash-chained audit log; signed daily checkpoints; optional SIEM copy; signed reports |
+| **Outbound** | Destinations validated as public and `https`, and checked again at connect time |
+| **Browser** | Content security policy with nonces; secure components in a separate origin |
+| **Countries** | Each country its own install, database and keys; linked installs exchange only signed names, settings and counts |
+
+## What Onshore trusts
+
+- **Whoever runs the server** can run `rv admin-recover`, and with database-owner rights could rewrite recent audit entries between checkpoints. Configure a SIEM copy, and restrict server access.
+- **Your server's authorisation** for reveal client tokens: the vault doesn't know your end users.
+- **Your identity provider**, when single sign-on is on.
+
+## Status
+
+Internal attack suites have run repeatedly with no open findings. **No independent penetration test yet, and no certifications (ISO 27001, SOC 2) today.** See [Known limits](/operate/known-limits/).

@@ -1,0 +1,41 @@
+---
+title: Supported countries
+description: The 18 countries with a built-in pack, the data types each finds, the laws setup suggests, and what every vault finds in any country.
+---
+
+import { Callout } from "nextra/components";
+
+# Supported countries
+
+A **country pack** teaches Onshore one country's ID numbers, bank account formats and phone numbers, and checks the issuer's check digit where one is published. Each vault runs the packs you choose, plus the **Everywhere** pack.
+
+**18 countries** have a built-in pack (the five EU countries share the European Union pack). **Every other country** can still have a vault: it gets the Everywhere pack, and you can add its IDs with [your own country pack](/guides/country-packs/). See [Any other country](/countries/any-country/).
+
+<CountryTable />
+
+## The Everywhere pack
+
+On for every vault, in every country:
+
+| Finds | Example (made up) |
+| --- | --- |
+| Names, from every region | Sarah Johnson, Kofi Mensah |
+| Email addresses | sarah@example.com |
+| Payment card numbers | 4111 1111 1111 1111 |
+| Amounts in any currency | $8,500 · €1.250,50 |
+| Phone numbers with a country code | +44 20 7946 0958 |
+| Dates of birth | 1988-03-14 |
+| Payment references | Off by default; turn on per connection |
+
+Card numbers are always masked, never stored in the vault.
+
+## How reliable is detection?
+
+- Where an issuer publishes a check digit (UK NI numbers' prefixes, NHS numbers, India's Aadhaar, Brazil's CPF, Singapore's NRIC, South Africa's ID, Emirates ID, IBANs, Luhn card numbers and others), a number that fails it isn't treated as that ID.
+- **Ghana, Qatar and Egypt publish no check digit**, so their IDs are checked on structure only.
+- Some IDs are only plain digits (Kenya's national ID, Saudi national IDs, US routing numbers). These need a cue word nearby, such as "ID" or "routing".
+- Nigeria's BVN and NIN look the same; an unlabelled 11-digit number is treated as a sensitive 11-digit ID either way.
+
+<Callout type="info">
+Detection quality on the internal test set is high, but the same team wrote the rules and the tests. Real samples from your systems are the true test: run new connections in watch only first.
+</Callout>

@@ -1,0 +1,39 @@
+---
+title: Laws
+description: The data protection and data residency laws built into setup, what each adds in Onshore, and their sources.
+---
+
+import { Callout } from "nextra/components";
+
+# Laws
+
+Setup suggests laws from your vaults' countries, your sector and where your customers live. Each law shows **why** it was suggested, a summary, its source, and the date we last checked it (**21 November 2026**). You can remove any, or add others, in **Settings → Locations and laws**.
+
+<Callout type="warning">
+These summaries are a starting point, **not legal advice**. Read each source, and let your counsel decide what applies to you.
+</Callout>
+
+<LawTable />
+
+## How suggestions are made
+
+| Suggested when | Laws |
+| --- | --- |
+| A vault is in the country | That country's law(s) |
+| Sector is banking and a vault is in Nigeria | CBN payments rule |
+| Sector is banking and you serve people in the EU | DORA |
+| Sector is banking and a vault is in the US | GLBA |
+| Sector is health and a vault is in the US | HIPAA |
+| You serve people in a place (Settings → Locations and laws) | That place's law |
+
+## Your own laws
+
+Laws for other countries, or ones the catalogue doesn't have, can be added in [your own country pack](/guides/country-packs/), with their source and the date you checked them.
+
+## What Onshore does about each law
+
+Onshore doesn't decide whether a transfer is lawful. It gives you:
+
+- a **legal ground** field on every connection, which appears in the residency report;
+- **evidence**: where data is, what left, who saw what, signed;
+- **controls**: tokenization, access rules, restriction, export and erasure for data subject requests.

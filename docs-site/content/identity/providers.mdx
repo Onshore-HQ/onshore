@@ -1,0 +1,101 @@
+---
+title: Provider guides
+description: Step-by-step single sign-on and SCIM setup for Microsoft Entra ID, Okta, Google Workspace, OneLogin, JumpCloud, Keycloak, authentik, Authelia and Duo.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Provider guides <Ent />
+
+Each guide has three parts: **create the app** at your provider, **fill in Onshore**, and **groups and SCIM**. In every case, copy the **callback URL** (and for SAML, **our entity ID**) from **Settings → Sign-in → Single sign-on** in Onshore.
+
+<Callout type="info">
+Provider screens change often. Names below are as of late 2026; look for the nearest equivalent if yours differ.
+</Callout>
+
+## Microsoft Entra ID
+
+**Create the app.** In the Entra admin centre, open **Enterprise applications → New application → Create your own application** for SAML, or **App registrations → New registration** for OIDC.
+
+- **OIDC:** add the callback URL as a **Web** redirect URI. Create a client secret under **Certificates & secrets**. The issuer is `https://login.microsoftonline.com/<tenant-id>/v2.0`.
+- **SAML:** set **Identifier (Entity ID)** to our entity ID and **Reply URL** to the callback URL. Download **Federation Metadata XML** and paste it into Onshore.
+
+**Fill in Onshore.** Provider: Microsoft Entra ID. For OIDC, issuer, client ID and secret. Groups claim: `groups`.
+
+**Groups.** Under **Token configuration → Add groups claim**. Entra sends **group IDs, not names**: map those IDs to roles in [Groups and roles](/identity/groups-and-roles/).
+
+**SCIM.** Supported. In the enterprise app, open **Provisioning**, choose **Automatic**, and paste the **SCIM URL** and a token from Onshore. See [SCIM](/identity/scim/).
+
+## Okta
+
+**Create the app.** **Applications → Create App Integration**: **OIDC – Web Application**, or **SAML 2.0**.
+
+- **OIDC:** sign-in redirect URI = callback URL. Issuer: `https://<your-org>.okta.com`.
+- **SAML:** single sign-on URL = callback URL; audience URI = our entity ID.
+
+**Groups.** OIDC: add a **groups claim** (filter on the groups you'll map). SAML: add a **groups attribute statement** named `groups`.
+
+**SCIM.** Supported: turn on SCIM provisioning for the app and paste the SCIM URL and a token.
+
+## Google Workspace
+
+**Create the app.** In the Google Admin console, **Apps → Web and mobile apps → Add custom SAML app**. Use the callback URL as the **ACS URL** and our entity ID as the **Entity ID**. OIDC works too, but sends no groups.
+
+**Groups.** Under **Attribute mapping**, add **Group membership** and name the attribute `groups`.
+
+**SCIM.** Google doesn't push SCIM to custom apps. Use groups from SAML, or set roles by hand.
+
+## OneLogin
+
+**Create the app.** Add the **OpenID Connect** or **SAML Custom Connector** app. Use the callback URL as the redirect URI or ACS URL. OIDC issuer: `https://<subdomain>.onelogin.com/oidc/2`.
+
+**Groups.** Add a `groups` parameter.
+
+**SCIM.** Supported with OneLogin's SCIM provisioner app.
+
+## JumpCloud
+
+**Create the app.** Add a **custom SSO application** (SAML) or a **custom OIDC app**, with the callback URL as ACS URL or redirect URI.
+
+**Groups.** Turn on the group attribute and name it `groups`.
+
+**SCIM.** Supported: turn on **Identity Management** for the app and paste the SCIM URL and a token.
+
+## Keycloak
+
+**Create the app.** In your realm, **Clients → Create client**: OpenID Connect with **Client authentication** on, or SAML.
+
+- **OIDC:** valid redirect URI = callback URL. Issuer: `https://<host>/realms/<realm>`.
+- **SAML:** client ID = our entity ID; assertion consumer URL = callback URL; sign assertions on; client signature required off; NameID format email.
+
+**Groups.** Add a **Group Membership** mapper named `groups`, with **Full group path** off.
+
+**SCIM.** Keycloak has no built-in SCIM. Use groups at sign-in.
+
+## authentik
+
+**Create the app.** Create an **OAuth2/OpenID provider** or **SAML provider**, and an application for it. Use the callback URL as the redirect URI or ACS URL. Issuer: `https://<host>/application/o/<slug>/`.
+
+**Groups.** The `profile` scope sends groups by default.
+
+**SCIM.** Supported: add a **SCIM provider** with the SCIM URL and a token, and attach it to the application as a backchannel provider.
+
+## Authelia
+
+**Create the app.** Add an OpenID Connect client in Authelia's configuration, with the callback URL as a redirect URI. Authelia doesn't do SAML.
+
+**Fill in Onshore.** Scopes: `openid email profile groups`.
+
+**SCIM.** None. Use groups at sign-in.
+
+## Duo
+
+**Create the app.** In the Duo Admin Panel, protect an application as a **Generic SAML Service Provider** or **Generic OIDC Relying Party**, with the callback URL as ACS URL or redirect URI.
+
+**Groups.** Map a `groups` attribute if you want roles to follow groups.
+
+**SCIM.** Duo doesn't push SCIM to custom apps.
+
+## Any other provider
+
+Create an OIDC client or a SAML app, use the callback URL, send email and (optionally) groups. If your provider supports SCIM 2.0, use the SCIM URL and a token from Onshore.

@@ -1,0 +1,24 @@
+---
+title: What Onshore is
+description: The problem Onshore solves, and the ideas behind it, in plain words.
+---
+
+# What Onshore is
+
+More and more countries want their citizens' personal data kept at home: a central bank requiring payment data to stay in the country, or a data protection law that sets conditions on sending personal data abroad. Moving your main database into the country is the visible part. The harder part is everything that flows **out** of that database every day: application logs shipped to a log vendor, customer messages pasted into an AI model, support tickets stored by a helpdesk, analytics events sent to a warehouse, and calls to vendor APIs.
+
+Onshore closes that gap. It sits where your data already flows and replaces sensitive values with **tokens** before they leave. The tools abroad keep working on tokens, and the real values stay **encrypted in a vault in the country**, released only when an access rule allows it.
+
+## What it protects
+
+- **National identifiers** for each country it has a pack for, such as UK National Insurance numbers, India's Aadhaar, Brazil's CPF, Nigeria's BVN, or an organisation's own types.
+- **Bank and card data**: account numbers, IBANs, card numbers.
+- **Contact details and names**: phone numbers, emails, people's names.
+- **Amounts, dates of birth and places**, which can be generalised (for example "£1,000–£2,000") rather than tokenized.
+
+## What it is not
+
+- It doesn't move your whole database for you. Most organisations still need a primary database in the country; Onshore handles identifiers and the flows around it.
+- It doesn't make you compliant by itself. It gives you controls and evidence; your counsel decides what your obligations are.
+
+Next: [How it works](/get-started/how-it-works/).

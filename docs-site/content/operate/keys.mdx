@@ -1,0 +1,60 @@
+---
+title: Keys and unsealing
+description: How keys are held, creating key shares, unsealing after a restart, and rotating keys.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Keys and unsealing
+
+## How keys are held
+
+- Each value is encrypted on its own (AES-GCM) with a **data key** belonging to its vault.
+- Data keys are stored only **wrapped** by a **master key**.
+- The master key lives in the **key service** (OpenBao, bundled) or your **HSM**, and never leaves it.
+- The database alone can decrypt nothing.
+
+## Key shares
+
+`rv keys init` initialises the key service with **five shares, any three of which unseal it** (Shamir's secret sharing).
+
+<Steps>
+
+### Choose five key holders
+
+People who won't all be unavailable at once, ideally in different teams.
+
+### Create the shares
+
+```sh
+./rv keys init
+```
+
+Each share is printed **once**. Give each holder their share in person or through separate secure channels.
+
+### Store them apart
+
+Each holder keeps their share safe, away from the others: a password manager, a sealed envelope in a safe.
+
+</Steps>
+
+<Callout type="error">
+If three or more shares are lost, **nothing in the vault can ever be decrypted again**. Nobody, including Onshore, can recover them.
+</Callout>
+
+## Unsealing after a restart
+
+After a restart, the key service is **sealed**: every request that needs a key fails closed with `key_service_unavailable`, and the console shows the key service as unavailable.
+
+```sh
+./rv keys status    # sealed or unsealed
+./rv keys unseal    # each of three key holders runs this and enters their share
+```
+
+## Rotation
+
+In the console, under [Encryption keys](/guides/encryption-keys/): rotate the master key (re-wraps every data key), rotate a vault's data key (new writes use it; optionally re-encrypt stored values), and set a schedule of 30, 60, 180 or 360 days.
+
+## Lookups without decrypting
+
+Searchable fields use a **blind index**: a keyed hash of the value, so a value can be found without decrypting anything.

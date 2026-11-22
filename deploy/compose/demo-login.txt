@@ -1,0 +1,7 @@
+Local demo sign-in. Synthetic data only. Delete when done.
+
+Address:            https://localhost:8443
+Email:              demo@demo.example.ng
+Temporary password: O7o9N5xR8u1EobS_tIqt
+
+You choose your own password and scan a QR code with an authenticator app on first sign-in.

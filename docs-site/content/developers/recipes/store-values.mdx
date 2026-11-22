@@ -1,0 +1,204 @@
+---
+title: Store values at the source
+description: Tokenize sensitive values the moment they enter your system, choose the right token kind, group values by person, and migrate an existing database.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Store values at the source
+
+The goal: a sensitive value (an ID number, a bank account, a date of birth) goes into the vault **the moment it enters your system**, and everything downstream (your database, logs, analytics, support tools, backups) only ever sees a token.
+
+## Where to tokenize
+
+Tokenize at the first place that receives the value, and nowhere else:
+
+| The value arrives… | Tokenize in | Use |
+| --- | --- | --- |
+| Typed by a customer in your web or mobile app | The browser or app, so it never reaches you | [Secure components](/developers/recipes/collect-and-reveal/) |
+| In an API request from a partner | Your API handler, before logging or saving | `tokenize` |
+| In a file upload or import | The import job, row by row | `tokenize` with `continueOnError` |
+| In free text (a support message, a note) | Where the text is received | [`detect` with `tokenize`](/developers/recipes/detect-in-text/) |
+| In traffic you can't change (a vendor's API) | The vault's HTTP proxy | [HTTP proxy](/developers/http-proxy/) |
+
+<Callout type="warning">
+Make sure the raw value isn't logged on its way in. Request-logging middleware, error trackers (Sentry, Bugsnag) and APM tools often capture request bodies. Exclude these fields, or tokenize before the logger sees the request.
+</Callout>
+
+## Choose a token kind for each field
+
+Each field in the vault has a token kind, set in the console when you add the field. It can't be changed later, because existing tokens depend on it.
+
+| Token kind | Same value twice | Searchable by value | Value can be updated | Choose it for |
+| --- | --- | --- | --- | --- |
+| **Same value, same token** (deterministic) | Same token, `existing: true` | Always | No | Anything you join, deduplicate or look up: national IDs, emails, phone numbers, account numbers |
+| **New token each time** (cell) | Different tokens | If marked searchable | Yes, with `updateValue` | Values that change, or shouldn't be linkable across records: addresses, notes, names |
+| **Expiring** (transient) | New token; stops working after the field's time limit | No | No | Values needed briefly: an ID number checked at onboarding and then not kept |
+
+Two more settings matter here:
+
+- **Unique**: on a cell field, storing a value already present fails with `409 duplicate_value`. Use it to enforce "one account per national ID" in the vault itself.
+- **Format-preserving tokens**: the token has the same shape as the value (a 16-digit token for a 16-digit number) for systems that validate formats. Opaque tokens (`tok_uk_nino_…`) are the default and the safer choice, because nobody can mistake them for a real value.
+
+## Group values by person with subject_ref
+
+Pass your own customer ID as `subject_ref` with every value that belongs to a person. It costs nothing and it's what makes these possible later:
+
+- finding everything held on a person ([`searchSubjects`](/developers/sdks/node/#searchsubjects)),
+- exporting it for an access request, and erasing it on request ([Data subject requests](/developers/recipes/data-subject-requests/)),
+- restricting a person so nothing about them reveals.
+
+Without `subject_ref`, a value can't be tied back to anyone, so it can't be found for a request.
+
+## A sign-up handler
+
+<Tabs items={["Node.js", "Python", "Go"]}>
+<Tabs.Tab>
+```ts
+app.post("/signup", async (req, res) => {
+  const { name, email, nationalId, dateOfBirth } = req.body;
+  const customerId = newCustomerId();
+
+  const { id: recordId, tokens } = await vault.insertRecord(VAULT, {
+    full_name: name,
+    email,
+    national_id: nationalId,
+    date_of_birth: dateOfBirth,
+  }, customerId);
+
+  await db.customers.insert({
+    id: customerId,
+    onshore_record: recordId,
+    email_token: tokens.email,
+    national_id_token: tokens.national_id,
+    dob_token: tokens.date_of_birth,
+    name_token: tokens.full_name,
+  });
+  res.status(201).json({ customerId });
+});
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+@app.post("/signup", status_code=201)
+def signup(body: SignupBody):
+    customer_id = new_customer_id()
+    rec = vault.insert_record(VAULT, {
+        "full_name": body.name,
+        "email": body.email,
+        "national_id": body.national_id,
+        "date_of_birth": body.date_of_birth,
+    }, subject_ref=customer_id)
+    t = rec["tokens"]
+    db.customers.insert(id=customer_id, onshore_record=rec["id"], email_token=t["email"],
+                        national_id_token=t["national_id"], dob_token=t["date_of_birth"], name_token=t["full_name"])
+    return {"customerId": customer_id}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+func signup(w http.ResponseWriter, r *http.Request) {
+    var in SignupBody
+    json.NewDecoder(r.Body).Decode(&in)
+    customerID := newCustomerID()
+
+    rec, err := client.InsertRecord(r.Context(), vaultID, map[string]string{
+        "full_name": in.Name, "email": in.Email, "national_id": in.NationalID, "date_of_birth": in.DateOfBirth,
+    }, customerID)
+    var ve *vault.Error
+    if errors.As(err, &ve) && ve.Code == "validation_failed" {
+        http.Error(w, "check your details", http.StatusUnprocessableEntity)
+        return
+    } else if err != nil {
+        http.Error(w, "try again", http.StatusServiceUnavailable)
+        return
+    }
+    db.InsertCustomer(r.Context(), customerID, rec.ID, rec.Tokens)
+    w.WriteHeader(http.StatusCreated)
+}
+```
+</Tabs.Tab>
+</Tabs>
+
+What to store in your database: the tokens, and the record ID if you use `getRecord`. Your columns become `national_id_token` instead of `national_id`. Tokens are safe to log, index, copy to a warehouse and send to vendors.
+
+### Handling a bad value
+
+If a value fails its field's format check, the whole record is refused with `422 validation_failed`, and nothing is stored. The error names the problem but never echoes the value. Show the person a form error. The check runs in the vault, so you don't have to keep validation rules for 18 countries' ID formats in your own code, although checking basic shape in the form first gives a quicker response.
+
+## Migrating an existing database
+
+You have a `customers` table with a plain `national_id` column. Moving it into the vault without downtime:
+
+<Steps>
+
+### Add a token column
+
+```sql
+ALTER TABLE customers ADD COLUMN national_id_token text;
+```
+
+### Write both, for new rows
+
+Change your code so new and updated rows are tokenized as well as written to the old column. Run this for a while, so no new row is missed by the backfill.
+
+### Check the old data first
+
+A dry run checks every value against the field's format and stores nothing:
+
+```ts
+const rows = await db.query("SELECT id, national_id FROM customers WHERE national_id_token IS NULL");
+const check = await vault.tokenize(VAULT,
+  rows.map((r) => ({ field: "national_id", value: r.national_id, subject_ref: r.id })),
+  { dryRun: true, continueOnError: true });
+const bad = check.filter((r) => r.error);
+console.log(`${bad.length} of ${rows.length} would be refused`);
+for (const b of bad) console.log(rows[b.index].id, b.error!.code); // ids and codes, never values
+```
+
+Fix or decide on the bad rows before going on: old data often holds placeholders like `N/A` or `000000000`.
+
+### Backfill in batches
+
+```ts
+const BATCH = 2000;
+for (;;) {
+  const rows = await db.query(
+    "SELECT id, national_id FROM customers WHERE national_id_token IS NULL AND national_id IS NOT NULL ORDER BY id LIMIT $1", [BATCH]);
+  if (rows.length === 0) break;
+
+  const results = await vault.tokenize(VAULT,
+    rows.map((r) => ({ field: "national_id", value: r.national_id, subject_ref: r.id })),
+    { continueOnError: true });
+
+  await db.tx(async (t) => {
+    for (const r of results) {
+      if (r.token) await t.query("UPDATE customers SET national_id_token=$1 WHERE id=$2", [r.token, rows[r.index].id]);
+      else await t.query("UPDATE customers SET national_id_migration_error=$1 WHERE id=$2", [r.error!.code, rows[r.index].id]);
+    }
+  });
+}
+```
+
+The field is deterministic, so re-running the backfill after a crash returns the same tokens (`existing: true`) rather than storing duplicates.
+
+### Switch reads to tokens
+
+Change code that used `national_id` to use the token, and [reveal](/developers/recipes/reveal-values/) only where a person really needs to see the value.
+
+### Drop the old column
+
+Once nothing reads it, remove the column, and purge it from backups on your normal backup schedule.
+
+```sql
+ALTER TABLE customers DROP COLUMN national_id;
+```
+
+</Steps>
+
+For bulk loads of millions of rows, the console's **Import data** page and the `rv import` command run the same checks with progress and a report: see [Import data](/guides/import-data/).
+
+## Next
+
+- [Reveal values safely](/developers/recipes/reveal-values/)
+- [Find a customer by value](/developers/recipes/find-by-value/)

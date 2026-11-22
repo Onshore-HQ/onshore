@@ -1,0 +1,73 @@
+---
+title: Webhooks
+description: Signed events for reveals, refusals, policy and key changes, identity changes and service failures. Payloads, signatures and delivery.
+---
+
+import { Callout } from "nextra/components";
+
+# Webhooks
+
+Create a webhook in **Health & alerts → New webhook**, or with `POST /control/v1/webhooks`. The signing secret is shown once. Webhooks say something needs attention; they aren't a data feed.
+
+## Events
+
+| Event | When |
+| --- | --- |
+| `reveal.performed` | A value was shown in full |
+| `reveal.denied` | An access rule refused a reveal |
+| `access.denied` | A rule refused something else, such as an export or a check |
+| `access.break_glass` | Emergency access was requested or used |
+| `key.changed` | A key was rotated, created or revoked |
+| `policy.published` | An access rule went live |
+| `custom_entity.published` | A data type went live or changed status |
+| `data.exported`, `data.deleted` | A person's data was exported or erased |
+| `components.sites_changed` | Sites allowed to use secure components changed |
+| `identity.changed` | A person, service account or sign-in setting changed |
+| `alert.raised` | An alert was raised, such as a reveal spike or a page script |
+| `page.script_new`, `page.script_changed`, `page.script_rejected_seen` | [Page protection](/guides/connections/page-protection/) events |
+| `monitor.component_down`, `monitor.component_recovered` | A service stopped or resumed answering |
+| `webhook.endpoint_disabled` | Another webhook turned itself off after repeated failures |
+
+## Payload
+
+```json
+{ "id": "aud_8e6e…_reveal.denied", "type": "reveal.denied", "created_at": "2026-11-03T20:36:31Z", "tenant_id": "t_…",
+  "data": { "audit_seq": 1508, "vault_id": "v_…", "principal_id": "p_…", "principal_kind": "service_account",
+            "module": "api", "action": "detokenize", "field_id": "f_…", "decision": "denied",
+            "policy_id": "default-deny", "policy_version": null, "break_glass": false, "request_id": "req_…" } }
+```
+
+<Callout type="info">
+**An event never holds a value, a purpose, free text, an address or a token.** The payload is an allowlist of the fields above.
+</Callout>
+
+## Checking the signature
+
+Do this before trusting an event, using the body **exactly as received**. The header `X-RV-Signature` is `t=<unix time>,v1=<hex>`:
+
+1. Compute HMAC-SHA256 of `<t>.<body>` with your secret.
+2. Compare it, in constant time, with each `v1` value.
+3. Refuse a `t` more than five minutes from now.
+
+During a secret rotation, the old secret also signs for 24 hours, so there are two `v1` values; either is enough. The Node and Python SDKs have `verifyWebhook` and `verify_webhook`.
+
+```ts
+import crypto from "node:crypto";
+function verify(secret: string, body: string, header: string) {
+  const parts = Object.fromEntries(header.split(",").map((p) => p.split("=") as [string, string]));
+  const t = Number(header.match(/t=(\d+)/)?.[1]);
+  if (!t || Math.abs(Date.now() / 1000 - t) > 300) return false;
+  const want = crypto.createHmac("sha256", secret).update(`${t}.${body}`).digest();
+  return [...header.matchAll(/v1=([0-9a-f]+)/g)].some(([, v]) => v.length === want.length * 2 && crypto.timingSafeEqual(Buffer.from(v, "hex"), want));
+}
+```
+
+## Delivery
+
+- **At least once, in no guaranteed order.** Use `id` (also in `X-RV-Event-Id`) to ignore repeats.
+- **A 2xx is success.** Anything else is retried after 30 seconds, 2, 10 and 30 minutes, 2, 6, 12 and 24 hours, then given up. It can be resent by hand for 30 days.
+- **Redirects aren't followed** and count as failures.
+- **After 100 failures in a row**, the webhook turns off and an alert is raised. Turning it on resumes where it stopped.
+- **Destinations must be public `https` addresses**, checked again at connect time.
+- A receiver's response is never stored, only its status or a category such as "timed out".
+- A new webhook starts from now. At most 10,000 undelivered events wait per webhook; beyond that, new ones wait in the audit log.

@@ -1,0 +1,396 @@
+openapi: 3.1.0
+info:
+  title: Onshore Control API
+  version: 0.1.0
+  summary: "Configure Onshore from code. Copy setup between installs, your own data types, country packs, webhooks and keys."
+  description: |
+    The control API manages configuration. It never holds or returns stored customer values. It's
+    served at `https://<your-host>/control`. This reference covers the endpoints intended for
+    automation; the console uses others that may change.
+
+    ## Authentication
+
+    - **Setup keys** (`onsk_…`), made in **Settings → Copy setup → Keys for pipelines**, can only export
+      and import setup. They act as the admin who made them, expire, and stop working if that person
+      loses the admin role.
+    - **People's session tokens** work for everything else, with that person's roles.
+servers:
+  - url: https://vault.yourbank.example/control
+    description: "Your install"
+security: [{ bearer: [] }]
+tags:
+  - name: Copy setup
+    description: "Export a vault's setup and import it into another vault or install."
+  - name: Setup keys
+    description: "Keys a CI pipeline uses to export and import setup."
+  - name: Data types
+    description: "Your own data types, from draft to protecting."
+  - name: Country packs
+    description: "Bundles of data types and laws for a country, shared as signed files."
+  - name: Webhooks
+    description: "Signed event deliveries to your systems."
+  - name: Monitoring
+    description: "Service health and Prometheus metrics."
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, description: "A setup key (`onsk_…`), a person's session token, or for metrics a metrics key." }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: object, properties: { code: { type: string }, message: { type: string } } }
+    Validator:
+      type: object
+      description: |
+        A check a pattern's match must pass. `length`, `prefix_list`, `luhn`, `mod11` and `custom_checksum`
+        are soft (a failure lowers confidence). `mod11_weighted`, `mod97`, `letter_check` and `date_embedded`
+        are definitive (a failure rules the match out).
+      required: [type]
+      properties:
+        type: { type: string, enum: [length, prefix_list, luhn, mod11, custom_checksum, mod11_weighted, mod97, letter_check, date_embedded] }
+        value: { type: integer, description: "length: the length. mod11_weighted: 0 = 11 minus the remainder, 1 = the remainder. mod97: characters to move to the end. letter_check: number added. date_embedded: start position, counting digits, from 1." }
+        values: { type: array, items: { type: string }, description: "prefix_list: the prefixes. letter_check: one string of check letters in order. date_embedded: one layout (YYMMDD, YYYYMMDD, DDMMYY, DDMMYYYY, MMDDYY)." }
+        weights: { type: array, items: { type: integer }, description: "For custom_checksum, mod11_weighted and letter_check." }
+        modulus: { type: integer, description: "For custom_checksum." }
+        check_position: { type: integer, description: "1-based position of the check character; 0 or -1 is the last." }
+    DataTypeDefinition:
+      type: object
+      required: [name, slug, kind, definition]
+      properties:
+        name: { type: string, maxLength: 120, example: Loan ID }
+        slug: { type: string, pattern: "^c_[a-z0-9_]{2,40}$", example: c_loan_id, description: "Fixed after the first publish. Tokens look like `tok_c_loan_id_…`." }
+        kind: { type: string, enum: [keyword_list, pattern, after_keyword, value_list, json_path] }
+        definition:
+          type: object
+          description: "keyword_list: terms, case_sensitive, whole_word. pattern: regex (RE2). after_keyword: cues, max_length, stop_chars. json_path: paths."
+          properties:
+            terms: { type: array, items: { type: string } }
+            case_sensitive: { type: boolean }
+            whole_word: { type: boolean }
+            regex: { type: string, example: "LN-\\d{8}" }
+            cues: { type: array, items: { type: string } }
+            max_length: { type: integer }
+            stop_chars: { type: string }
+            paths: { type: array, items: { type: string }, example: ["$.customer.loan_id"] }
+        validator: { $ref: "#/components/schemas/Validator" }
+        context_positive: { type: array, items: { type: string }, description: "Words that make a match more likely (up to +0.2)." }
+        context_negative: { type: array, items: { type: string }, description: "Words that make a match less likely (up to −0.3)." }
+        threshold: { type: number, default: 0.7 }
+        token_kind: { type: string, enum: [deterministic, cell, transient], default: deterministic }
+        token_format: { type: string, enum: [opaque, format_preserving], default: opaque }
+        mask_rule:
+          type: object
+          description: "last_n / first_n with n, fixed with text, or full."
+          example: { type: last_n, n: 4 }
+        actions:
+          type: object
+          description: "Per module. Support tools and file redaction follow `api`."
+          properties:
+            api: { type: string, enum: [tokenize, mask, drop, pass] }
+            logs: { type: string, enum: [tokenize, mask, drop, pass] }
+            ai: { type: string, enum: [tokenize, mask, drop, pass] }
+            proxy: { type: string, enum: [tokenize, mask, drop, pass] }
+        tests:
+          type: array
+          description: "Made-up samples. Publishing needs at least 3 that must match and 3 that must not."
+          items: { type: object, properties: { sample: { type: string }, expect_match: { type: boolean } } }
+    Law:
+      type: object
+      required: [name, source, checked_on]
+      properties:
+        name: { type: string }
+        effect: { type: string }
+        source: { type: string, format: uri, description: "Must be https." }
+        checked_on: { type: string, format: date }
+paths:
+  /v1/config/export:
+    get:
+      tags: [Copy setup]
+      summary: "Export a vault's setup"
+      description: "Fields, your own data types, access rules, approved networks and connections. Never keys, secrets, people or customer data. Needs the `config:export` scope."
+      parameters: [{ name: vault_id, in: query, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: "The setup file, as JSON." }
+  /v1/config/import:
+    post:
+      tags: [Copy setup]
+      summary: "Import setup"
+      description: |
+        Shows what would change (`dry_run: true`, the default) or applies it. Imports never delete, never
+        redirect or weaken a live connection, never change a field's token type, bring access rules and data
+        types in as drafts, and start new connections in watch only with new keys (returned once in
+        `shown_once`). Needs the `config:import` scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vault_id, config]
+              properties:
+                vault_id: { type: string }
+                dry_run: { type: boolean, default: true }
+                config: { type: object, description: "The file from export." }
+      responses:
+        "200":
+          description: "A step per item."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: { type: string }
+                        name: { type: string }
+                        action: { type: string, enum: [create, update, same, skip, failed] }
+                        note: { type: string }
+                        shown_once: { type: object, additionalProperties: { type: string } }
+  /v1/api-keys:
+    get:
+      tags: [Setup keys]
+      summary: "List setup keys"
+      responses: { "200": { description: "Keys, without their secrets." } }
+    post:
+      tags: [Setup keys]
+      summary: "Make a setup key"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name, scopes], properties: { name: { type: string }, scopes: { type: array, items: { type: string, enum: ["config:export", "config:import"] } }, expires_in_days: { type: integer, minimum: 1, maximum: 3650 } } } } } }
+      responses: { "200": { description: "The key, shown once.", content: { application/json: { schema: { type: object, properties: { id: { type: string }, key: { type: string, example: onsk_… } } } } } } }
+  /v1/api-keys/{id}/revoke:
+    post:
+      tags: [Setup keys]
+      summary: "Revoke a setup key"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Revoked. Anything using it stops at once." } }
+  /v1/vaults/{vault}/custom-entities:
+    get:
+      tags: [Data types]
+      summary: "List your data types"
+      parameters:
+        - { name: vault, in: path, required: true, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, shadow, enforcing, archived] } }
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [name, hits, updated] } }
+      responses: { "200": { description: "The data types with their hits." } }
+    post:
+      tags: [Data types]
+      summary: "Create a draft"
+      description: "Needs the admin or detection_manager role, and your own data types turned on for the vault. A draft matches nothing outside the test bench."
+      parameters: [{ name: vault, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/DataTypeDefinition" } } } }
+      responses:
+        "201": { description: "Created.", content: { application/json: { schema: { type: object, properties: { id: { type: string }, slug: { type: string }, status: { type: string, example: draft }, version: { type: integer, example: 0 } } } } } }
+        "409": { description: "`slug_taken` or `entity_limit` (200 per vault, 50 patterns)." }
+  /v1/vaults/{vault}/custom-entities/{id}:
+    get:
+      tags: [Data types]
+      summary: "Read a data type"
+      parameters: [{ name: vault, in: path, required: true, schema: { type: string } }, { name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "The data type, its pending edit, fields, policies using it, list state and pending request." } }
+    patch:
+      tags: [Data types]
+      summary: "Edit a data type"
+      description: "Edits a draft directly. For a published data type, the edit waits beside the live version until approved."
+      parameters: [{ name: vault, in: path, required: true, schema: { type: string } }, { name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/DataTypeDefinition" } } } }
+      responses: { "200": { description: "Saved." } }
+  /v1/vaults/{vault}/custom-entities/{id}/publish-requests:
+    post:
+      tags: [Data types]
+      summary: "Ask to publish"
+      description: "Runs the samples (at least 3 and 3, all passing) and a benchmark. Refused with `entity_test_failed`, `entity_too_broad` (over 5% of lines) or `entity_too_slow` (over 0.3 ms per KB; 1 ms for a value list)."
+      parameters: [{ name: vault, in: path, required: true, schema: { type: string } }, { name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "201": { description: "A pending request, with the benchmark." }
+        "422": { description: "Samples failed, too broad, or too slow." }
+  /v1/publish-requests:
+    get:
+      tags: [Data types]
+      summary: "Pending requests"
+      responses: { "200": { description: "Each with `can_approve` for the caller." } }
+  /v1/publish-requests/{id}/approve:
+    post:
+      tags: [Data types]
+      summary: "Approve"
+      description: "By a second person with the admin or detection_approver role. The author, and whoever last edited it, can't approve. A new data type goes live in watch only (shadow)."
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Published." }, "403": { description: "`approval_required`: you wrote this change." } }
+  /v1/publish-requests/{id}/reject:
+    post:
+      tags: [Data types]
+      summary: "Reject"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Rejected." } }
+  /v1/vaults/{vault}/custom-entities/{id}/status:
+    post:
+      tags: [Data types]
+      summary: "Change status"
+      description: "Move a published data type between watch only (shadow), protecting (enforcing) and archived. Archiving is blocked while a published access rule names it."
+      parameters: [{ name: vault, in: path, required: true, schema: { type: string } }, { name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [shadow, enforcing, archived] } } } } } }
+      responses: { "200": { description: "Changed." }, "409": { description: "`entity_in_use`." } }
+  /v1/vaults/{vault}/custom-entities/{id}/values:
+    post:
+      tags: [Data types]
+      summary: "Upload a value list"
+      description: "Multipart, with a CSV `file` and the `column` to read. Up to 100,000 values; stored only as keyed hashes. Goes live with the next approved version."
+      parameters: [{ name: vault, in: path, required: true, schema: { type: string } }, { name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, properties: { file: { type: string, format: binary }, column: { type: string } } } } } }
+      responses: { "200": { description: "received, hashed, duplicates, rejected, rejected_rows." } }
+  /v1/custom-entities/check:
+    post:
+      tags: [Data types]
+      summary: "Check a definition"
+      description: "Says whether a definition compiles, storing nothing."
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { kind: { type: string }, definition: { type: object }, validator: { $ref: "#/components/schemas/Validator" } } } } } }
+      responses: { "200": { description: "Compiles." }, "400": { description: "The reason it doesn't." } }
+  /v1/custom-entities/suggest-pattern:
+    post:
+      tags: [Data types]
+      summary: "Propose a pattern from examples"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { examples: { type: array, minItems: 3, maxItems: 50, items: { type: string } } } }, example: { examples: [LN-00412873, LN-11112222, LN-33334444] } } } }
+      responses: { "200": { description: "A pattern and a plain explanation.", content: { application/json: { example: { regex: "LN\\-\\d{8}", explanation: "Matches \"LN-\", then 8 digits." } } } } }
+  /v1/packs:
+    get:
+      tags: [Country packs]
+      summary: "List packs"
+      responses: { "200": { description: "Your packs." } }
+    post:
+      tags: [Country packs]
+      summary: "Create a pack"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [country, name], properties: { country: { type: string, example: MA }, name: { type: string }, description: { type: string } } } } } }
+      responses: { "201": { description: "Created." }, "409": { description: "A pack with that name exists." } }
+  /v1/packs/{id}:
+    get:
+      tags: [Country packs]
+      summary: "Read a pack"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "The pack and the vaults it's in." } }
+    put:
+      tags: [Country packs]
+      summary: "Save a pack"
+      description: "New content makes a new version. Value lists aren't allowed. Every definition must compile."
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                data_types: { type: array, maxItems: 60, items: { $ref: "#/components/schemas/DataTypeDefinition" } }
+                laws: { type: array, maxItems: 30, items: { $ref: "#/components/schemas/Law" } }
+      responses: { "200": { description: "The version." } }
+    delete:
+      tags: [Country packs]
+      summary: "Archive a pack"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Archived." } }
+  /v1/packs/{id}/test:
+    post:
+      tags: [Country packs]
+      summary: "Test a pack"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Per data type: passed, failed samples, enough_samples; and ready." } }
+  /v1/packs/{id}/apply:
+    post:
+      tags: [Country packs]
+      summary: "Apply a pack to a vault"
+      description: "Creates or updates each data type in the vault and asks to publish it. A second person approves each."
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [vault], properties: { vault: { type: string } } } } } }
+      responses: { "200": { description: "Per data type: outcome (created, updated, unchanged, skipped), request, error; country_matches." } }
+  /v1/packs/{id}/export:
+    get:
+      tags: [Country packs]
+      summary: "Export a signed pack file"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "The file: format, format_version, pack, signed_by (organisation, public_key, fingerprint), signed_at, signature (Ed25519 over the canonical JSON)." } }
+  /v1/packs/import:
+    post:
+      tags: [Country packs]
+      summary: "Import a pack file"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [file], properties: { file: { type: object }, preview: { type: boolean, default: false } } } } } }
+      responses: { "200": { description: "The preview." }, "201": { description: "Imported." }, "422": { description: "`bad_signature`: changed after signing, or unsigned." } }
+  /v1/webhooks/event-types:
+    get:
+      tags: [Webhooks]
+      summary: "List event types"
+      responses: { "200": { description: "Every event type you can subscribe to." } }
+  /v1/webhooks:
+    get:
+      tags: [Webhooks]
+      summary: "List webhooks"
+      responses: { "200": { description: "Your webhooks." } }
+    post:
+      tags: [Webhooks]
+      summary: "Create a webhook"
+      description: "Up to 20 per organisation. The URL must be public and https. Starts from now, without history."
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [url, event_types], properties: { url: { type: string }, description: { type: string, maxLength: 200 }, event_types: { type: array, items: { type: string } } } }, example: { url: "https://hooks.yourbank.example/onshore", event_types: [reveal.denied, access.break_glass, monitor.component_down] } } } }
+      responses: { "201": { description: "The webhook, with its signing `secret` shown once." } }
+  /v1/webhooks/{id}:
+    patch:
+      tags: [Webhooks]
+      summary: "Update a webhook"
+      description: "Change the URL, description, event types, or turn it on or off. Turning it back on resets its failure count."
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { url: { type: string }, description: { type: string }, event_types: { type: array, items: { type: string } }, enabled: { type: boolean } } } } } }
+      responses: { "200": { description: "Updated." } }
+    delete:
+      tags: [Webhooks]
+      summary: "Delete a webhook"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Deleted, with its delivery history." } }
+  /v1/webhooks/{id}/rotate-secret:
+    post:
+      tags: [Webhooks]
+      summary: "Rotate the signing secret"
+      description: "The old secret also signs for 24 hours."
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "The new secret, shown once." } }
+  /v1/webhooks/{id}/test:
+    post:
+      tags: [Webhooks]
+      summary: "Send a test event"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Sent." } }
+  /v1/webhooks/{id}/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: "List deliveries"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: limit, in: query, schema: { type: integer } }, { name: status, in: query, schema: { type: string } }]
+      responses: { "200": { description: "Recent deliveries, with status and attempts." } }
+  /v1/webhooks/{id}/deliveries/{delivery}/redeliver:
+    post:
+      tags: [Webhooks]
+      summary: "Send a delivery again"
+      description: "Possible for 30 days."
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: delivery, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: "Queued." } }
+  /v1/monitoring:
+    get:
+      tags: [Monitoring]
+      summary: "Health and the last hour"
+      responses: { "200": { description: "Each service's state, latency, alerts, webhook and SIEM figures." } }
+  /v1/monitoring/metrics-key:
+    post:
+      tags: [Monitoring]
+      summary: "Create or replace the metrics key"
+      responses: { "200": { description: "The key, shown once." } }
+    delete:
+      tags: [Monitoring]
+      summary: "Revoke the metrics key"
+      responses: { "200": { description: "Revoked." } }
+  /v1/monitoring/metrics:
+    get:
+      tags: [Monitoring]
+      summary: "Prometheus metrics"
+      description: "With the metrics key as the bearer token. Cached for 15 seconds."
+      responses: { "200": { description: "Prometheus text format.", content: { text/plain: { example: "rv_component_up{component=\"vault-api\"} 1\nrv_open_alerts 0\n" } } } }

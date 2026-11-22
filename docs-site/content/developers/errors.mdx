@@ -1,0 +1,51 @@
+---
+title: Errors and limits
+description: Error format, error codes, and the limits on sizes, rates and counts.
+---
+
+# Errors and limits
+
+## Error format
+
+```json
+{ "error": { "code": "policy_denied", "message": "no rule allows this", "policy": "default-deny" }, "request_id": "req_…" }
+```
+
+Quote the `request_id` when asking for help, and find it in [Service logs](/guides/usage-and-service-logs/#service-logs).
+
+| Code | Status | Means |
+| --- | --- | --- |
+| `invalid_request` | 400 | The request is malformed, or a required field is missing |
+| `unauthenticated` | 401 | No token, an expired token, or a wrong signature |
+| `forbidden` | 403 | Your role doesn't allow this |
+| `policy_denied` | 403 | No access rule allows this |
+| `edition_required` | 403 | The feature needs Enterprise or Onshore Cloud |
+| `token_not_found` | 404 | Unknown or expired token |
+| `duplicate_value` | 409 | The value already exists where it must be unique |
+| `validation_failed` | 422 | The value fails its field's format check |
+| `entity_test_failed`, `entity_too_broad`, `entity_too_slow` | 422 | A data type's samples failed, or it matches too much or is too slow |
+| `bad_signature` | 422 | A pack file was changed or isn't signed |
+| `rate_limited` | 429 | A reveal, lookup or sign-in limit was reached |
+| `key_service_unavailable` | 503 | The key service is sealed or unreachable: nothing is decrypted |
+| `vault_unavailable` | 503 | The vault can't be reached |
+| `internal` | 500 | Something went wrong; the message never quotes your data |
+
+## Limits
+
+| What | Limit |
+| --- | --- |
+| Tokenize or detokenize batch | 500 items |
+| Detect text | 1 MB |
+| Cloak text | 256 KB |
+| Lookups and resident checks | 60 a minute per caller |
+| Reveals | As set in access rules (200 an hour per person in the starter rules) |
+| Purpose | 500 characters |
+| File redaction | 64 MB |
+| Collect client token | 10 fields; reveal client token: 20 tokens |
+| Client token life | 2 minutes by default, 10 at most |
+| Your own data types | 200 per vault, 50 of them patterns |
+| Value lists | 100,000 values per list, 1,000,000 per vault |
+| Country pack | 60 data types, 30 laws |
+| Passkeys | 10 per person |
+| SCIM tokens | 5 active per organisation |
+| Sign-in failures | 8 per email or address, then a 15-minute lock |

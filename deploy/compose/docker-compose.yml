@@ -1,0 +1,265 @@
+name: onshore
+
+# Every service gets only the secrets it needs, and only the networks it needs.
+# edge -> app network -> services; only vault-api reaches the key service.
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: ["/tmp"]
+
+x-build-go: &go-args
+  LICENCE_PUBLIC_KEY: "${RV_LICENCE_PUBLIC_KEY:-}"
+
+services:
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["${RV_HTTPS_PORT:-443}:443"]
+    environment:
+      RV_HOST: ${RV_HOST:-localhost}
+      RV_TLS: ${RV_TLS:-internal}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - ./internal-tls/edge:/tls:ro
+      - caddydata:/data
+    networks:
+      app:
+        aliases: ["${RV_HOST:-localhost}"]
+      public: {}
+    depends_on: [vault-api, console, control-api]
+
+  vault-api:
+    <<: *hardening
+    image: ${RV_REGISTRY:-rv}/vault-api:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: vault-api, args: *go-args }
+    networks: [app, db, keys]
+    volumes: ["./internal-tls/vault-api:/tls:ro"]
+    environment:
+      RV_ENV: ${RV_ENV:-production}
+      KEY_BACKEND: ${KEY_BACKEND:-openbao}   # pkcs11 for a bank HSM is on the roadmap
+      OPENBAO_ADDR: https://keys:8200
+      OPENBAO_CACERT: /tls/ca.pem
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:-}
+      DATABASE_URL: postgres://rv_vault:${RV_VAULT_DB_PASSWORD}@postgres:5432/rv?sslmode=verify-full&sslrootcert=/tls/ca.pem
+      RV_TRUSTED_PROXIES: 172.30.0.0/24
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_TOKEN_SIGNING_SEED: ${RV_TOKEN_SIGNING_SEED}
+      RV_USER_TOKEN_PUBLIC_KEY: ${RV_USER_TOKEN_PUBLIC_KEY}
+      RV_LICENCE: ${RV_LICENCE:-}
+      RV_GEOIP_CSV: ${RV_GEOIP_CSV:-}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  control-api:
+    <<: *hardening
+    image: ${RV_REGISTRY:-rv}/control-api:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/control-api.Dockerfile }
+    # egress: SSO token exchange and SIEM delivery, which check for public addresses, and
+    # email, which may use a private mail server but never this installation's own networks.
+    networks: [app, db, egress]
+    volumes: ["./internal-tls/control-api:/tls:ro"]
+    environment:
+      DATABASE_URL: postgres://rv_control:${RV_CONTROL_DB_PASSWORD}@postgres:5432/rv
+      DATABASE_CA: /tls/ca.pem
+      VAULT_INTERNAL_URL: https://vault-api:8080
+      RV_TRUSTED_PROXIES: 172.30.0.0/24
+      RV_HOST: ${RV_HOST:-localhost}
+      RV_COUNTRY: ${RV_COUNTRY:-}
+      RV_CLOUD: ${RV_CLOUD:-}
+      RV_CLOUD_REGIONS: ${RV_CLOUD_REGIONS:-}
+      RV_PRIMARY_URL: ${RV_PRIMARY_URL:-}
+      RV_JOIN_CODE: ${RV_JOIN_CODE:-}
+      RV_PUBLIC_PORT: ${RV_PUBLIC_PORT:-}
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_USER_TOKEN_SEED: ${RV_USER_TOKEN_SEED}
+      RV_SESSION_IDLE_MINUTES: ${RV_SESSION_IDLE_MINUTES:-15}
+      RV_CONTROL_SECRET: ${RV_CONTROL_SECRET}
+      RV_ADAPTER_SECRET: ${RV_ADAPTER_SECRET}
+      RV_BOOTSTRAP_TOKEN: ${RV_BOOTSTRAP_TOKEN}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CA: /tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  console:
+    <<: *hardening
+    image: ${RV_REGISTRY:-rv}/console:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/console.Dockerfile }
+    networks: [app]
+    tmpfs: ["/tmp", "/app/.next/cache"]
+    volumes: ["./internal-tls/console:/tls:ro"]
+    environment:
+      CONTROL_API_URL: https://control-api:8081
+      VAULT_API_URL: https://vault-api:8080
+      FILES_URL: https://file-redactor:8094
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CA: /tls/ca.pem
+
+  migrate:
+    image: ${RV_REGISTRY:-rv}/tools:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: tools, args: *go-args }
+    restart: "no"
+    command: ["migrate"]
+    networks: [db]
+    volumes: ["./internal-tls/tools:/tls:ro"]
+    environment:
+      DATABASE_URL: postgres://rv:${DB_PASSWORD}@postgres:5432/rv?sslmode=verify-full&sslrootcert=/tls/ca.pem
+      RV_VAULT_DB_PASSWORD: ${RV_VAULT_DB_PASSWORD}
+      RV_CONTROL_DB_PASSWORD: ${RV_CONTROL_DB_PASSWORD}
+      RV_LICENCE: ${RV_LICENCE:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [db]
+    # The key file must be owned by postgres, which a bind mount cannot promise.
+    entrypoint: ["sh", "-c", "install -d -o postgres -g postgres -m 700 /run/rv-tls && install -o postgres -g postgres -m 600 /tls/key.pem /run/rv-tls/key.pem && install -o postgres -g postgres -m 644 /tls/cert.pem /run/rv-tls/cert.pem && exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/run/rv-tls/cert.pem -c ssl_key_file=/run/rv-tls/key.pem -c ssl_min_protocol_version=TLSv1.3 -c hba_file=/etc/rv/pg_hba.conf"]
+    environment:
+      POSTGRES_USER: rv
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: rv
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./internal-tls/postgres:/tls:ro
+      - ./pg_hba.conf:/etc/rv/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rv -d rv"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  keys:
+    image: openbao/openbao:2.4
+    restart: unless-stopped
+    networks: [keys]
+    command: ["server", "-config=/etc/openbao/openbao.hcl"]
+    volumes:
+      - ./openbao.hcl:/etc/openbao/openbao.hcl:ro
+      - ./internal-tls/keys:/tls:ro
+      - keydata:/openbao/file
+
+  log-processor:
+    <<: *hardening
+    profiles: ["logs"]
+    image: ${RV_REGISTRY:-rv}/log-processor:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: log-processor, args: *go-args }
+    networks: [app, db, egress]
+    volumes: ["./internal-tls/log-processor:/tls:ro"]
+    environment:
+      DATABASE_URL: postgres://rv_vault:${RV_VAULT_DB_PASSWORD}@postgres:5432/rv?sslmode=verify-full&sslrootcert=/tls/ca.pem
+      VAULT_INTERNAL_URL: https://vault-api:8080
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  ai-gateway:
+    <<: *hardening
+    profiles: ["ai"]
+    image: ${RV_REGISTRY:-rv}/ai-gateway:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: ai-gateway, args: *go-args }
+    networks: [app, db, egress]
+    volumes: ["./internal-tls/ai-gateway:/tls:ro"]
+    environment:
+      DATABASE_URL: postgres://rv_vault:${RV_VAULT_DB_PASSWORD}@postgres:5432/rv?sslmode=verify-full&sslrootcert=/tls/ca.pem
+      VAULT_INTERNAL_URL: https://vault-api:8080
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  http-proxy:
+    <<: *hardening
+    profiles: ["proxy"]
+    image: ${RV_REGISTRY:-rv}/http-proxy:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: http-proxy, args: *go-args }
+    networks: [app, db, egress]
+    volumes: ["./internal-tls/http-proxy:/tls:ro"]
+    environment:
+      DATABASE_URL: postgres://rv_vault:${RV_VAULT_DB_PASSWORD}@postgres:5432/rv?sslmode=verify-full&sslrootcert=/tls/ca.pem
+      VAULT_INTERNAL_URL: https://vault-api:8080
+      RV_FILE_REDACTOR_URL: https://file-redactor:8094
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  adapters:
+    <<: *hardening
+    profiles: ["adapters"]
+    image: ${RV_REGISTRY:-rv}/adapters:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: adapters, args: *go-args }
+    networks: [app, db, egress]
+    volumes: ["./internal-tls/adapters:/tls:ro"]
+    environment:
+      DATABASE_URL: postgres://rv_vault:${RV_VAULT_DB_PASSWORD}@postgres:5432/rv?sslmode=verify-full&sslrootcert=/tls/ca.pem
+      VAULT_INTERNAL_URL: https://vault-api:8080
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_ADAPTER_SECRET: ${RV_ADAPTER_SECRET}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  # No database, key service or outbound network: it handles untrusted files.
+  file-redactor:
+    <<: *hardening
+    profiles: ["files"]
+    image: ${RV_REGISTRY:-rv}/file-redactor:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: file-redactor, args: *go-args }
+    networks: [app]
+    tmpfs: ["/tmp:size=2g"]
+    pids_limit: 256
+    mem_limit: 4g
+    volumes: ["./internal-tls/file-redactor:/tls:ro"]
+    environment:
+      VAULT_INTERNAL_URL: https://vault-api:8080
+      RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+
+  # Run through ./rv: `./rv keys init`, `./rv doctor`, `./rv scan file.log`.
+  tools:
+    profiles: ["tools"]
+    image: ${RV_REGISTRY:-rv}/tools:${RV_VERSION:-dev}
+    build: { context: ../.., dockerfile: deploy/docker/data-plane.Dockerfile, target: tools, args: *go-args }
+    networks: [app, keys]
+    environment:
+      OPENBAO_ADDR: https://keys:8200
+      OPENBAO_CACERT: /work/internal-tls/tools/ca.pem
+    volumes: [".:/work"]
+
+networks:
+  app:
+    internal: true
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+  db:
+    internal: true
+  keys:
+    internal: true
+  public: {}
+  egress: {}   # log destinations abroad; nothing else joins this network
+
+volumes:
+  pgdata: {}
+  keydata: {}
+  caddydata: {}

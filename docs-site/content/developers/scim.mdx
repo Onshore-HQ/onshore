@@ -1,0 +1,48 @@
+---
+title: SCIM API
+description: The SCIM 2.0 endpoints Onshore serves for identity providers. Users, groups, filters and PATCH.
+---
+
+# SCIM API
+
+Base URL: `https://<host>/control/scim/v2`. Authenticate with `Authorization: Bearer rvscim_…`, a token made in **Settings → Sign-in → Directory sync**. Send and receive `application/scim+json` (plain JSON also works). Setup for administrators: [SCIM provisioning](/identity/scim/).
+
+| Endpoint | Methods |
+| --- | --- |
+| `/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | `GET` |
+| `/Users` | `GET` (list, filter), `POST` |
+| `/Users/{id}` | `GET`, `PUT`, `PATCH`, `DELETE` |
+| `/Groups` | `GET` (list, filter), `POST` |
+| `/Groups/{id}` | `GET`, `PUT`, `PATCH`, `DELETE` |
+
+## Users
+
+- `userName` (or the primary email) must be an email address.
+- `active: false` suspends the account and ends its sessions; `true` restores it. Booleans sent as strings (`"False"`) are accepted.
+- `DELETE` marks the account removed: kept for the audit trail, never signs in, no roles. A later `POST` with the same email restores the same account.
+- The organisation's **last admin** can't be deactivated or deleted (400, `scimType: mutability`).
+
+## Groups
+
+Members are `{ "value": "<user id>" }`. Group names match without regard to case, and a second group with the same name is refused. PATCH supports:
+
+- `{"op": "add", "path": "members", "value": [...]}`
+- `{"op": "remove", "path": "members", "value": [...]}` and `{"op": "remove", "path": "members[value eq \"<id>\"]"}`
+- `{"op": "replace", "path": "members", "value": [...]}`
+- `{"op": "replace", "value": {"displayName": "…"}}`
+
+When membership changes, members' roles are recalculated from [groups and roles](/identity/groups-and-roles/). `excludedAttributes=members` leaves members out of responses.
+
+## Filters
+
+Only `attribute eq "value"`: `userName`, `externalId`, `emails.value` for users; `displayName`, `externalId` for groups. Others return 400 with `scimType: invalidFilter`. Paging uses `startIndex` and `count` (up to 200).
+
+## Errors
+
+SCIM's own format:
+
+```json
+{ "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"], "status": "409", "scimType": "uniqueness", "detail": "a user with that userName already exists" }
+```
+
+Not supported: bulk operations, sorting, ETags, password changes.

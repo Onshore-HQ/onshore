@@ -1,0 +1,61 @@
+---
+title: Linked installs and Cloud regions
+description: Keep data in several countries under one console. Enterprise links an install in each country; Onshore Cloud runs a region in each.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Linked installs and Cloud regions <Ent />
+
+One install keeps data in one country. To keep data in several countries under one console, **Enterprise** links an install in each country to your main one, and **Onshore Cloud** runs a region in each country we've opened.
+
+Each linked install keeps its customers' data, keys and vaults **in its own country**. It reports to your main console every minute with **vault names, settings and counts only**, signed.
+
+| Crosses the border | Never crosses |
+| --- | --- |
+| Vault names and settings | Customer values |
+| Counts: values found, reveals, refusals | Encryption keys |
+| Instructions such as "create a vault" | |
+
+## Link an install (Enterprise)
+
+<Steps>
+
+### Get a join code
+
+In **Settings → Locations and laws**, under **Installs in other countries**, select **Link an install** and choose the country. You get a command with a **join code**. It works **once**, expires in **24 hours**, and is tied to that country.
+
+### Install in that country
+
+On a server in the country, install Onshore with the join command:
+
+```sh
+./rv init --host vault.de.yourbank.example --country de --join rvj_… --primary https://onshore.yourbank.example
+```
+
+Then finish the install as usual ([Install](/get-started/install/)).
+
+### It joins
+
+Within a minute of starting, the install joins and appears as **Reporting**. Any vaults first-time setup planned for that country are created there.
+
+</Steps>
+
+The new install needs **outbound HTTPS** to your main console; the main console never connects in. If the main console uses a private certificate authority, set `RV_PRIMARY_CA` on the new install.
+
+## What you see
+
+For each linked install: its status (**Waiting to join**, **Reporting**, **Not reporting**), when it last reported and its version, its vaults, values found in 7 days, and reveals and refusals. If an instruction failed, the error is shown. **Remove link** disconnects it; a waiting install can get a **new join code** (the old one stops working).
+
+## Cloud regions
+
+In Onshore Cloud, each region is an install Onshore runs in that country. If you choose a country without an open region, it goes on a **waitlist**. When the region opens, the console says so; select **Set it up**.
+
+## Security
+
+- Each report is signed with a secret agreed when the install joined, and must be within five minutes of the current time; old or altered reports are refused.
+- A report can carry only names and counts: anything else is refused.
+
+<Callout type="warning">
+Not built yet: **one sign-in across installs** (people sign in to each install; pointing every install at the same identity provider helps), **sending access rules** from one install to others, and **one audit view** across installs. Linking has been tested on one machine, not yet across countries.
+</Callout>

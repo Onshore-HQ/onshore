@@ -1,0 +1,70 @@
+---
+title: LDAP and Active Directory
+description: Check people's passwords against Active Directory, OpenLDAP or FreeIPA, with roles from directory groups.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# LDAP and Active Directory <Ent />
+
+For organisations whose directory isn't behind single sign-on, Onshore can check passwords against **Active Directory, OpenLDAP or FreeIPA**. People still use their **authenticator app or passkey** in Onshore, because a directory has no second factor of its own.
+
+## Set it up
+
+<Steps>
+
+### Fill in the directory
+
+In **Settings → Sign-in → LDAP directory**:
+
+| Field | Example |
+| --- | --- |
+| **Directory URL** | `ldaps://dc1.yourbank.example:636`, or `ldap://…:389` with **Upgrade ldap:// with StartTLS** ticked |
+| **CA certificate** | If your directory uses a private certificate authority, its certificate in PEM form |
+| **Service account DN** and **password** | An account that can search for people, such as `CN=svc-onshore,OU=Service,DC=yourbank,DC=example` |
+| **Where to look for people** (base DN) | `OU=Staff,DC=yourbank,DC=example` |
+| **User filter** | `(&(objectClass=person)(mail={email}))`. `{email}` is replaced by the address typed |
+| **Where to look for groups** (optional) | `OU=Groups,DC=yourbank,DC=example`. `memberOf` is read either way |
+| **Group filter** | `(&(objectClass=groupOfNames)(member={dn}))`. `{dn}` is the person |
+| **Email domains** | `yourbank.example` |
+
+For Active Directory, select **Use Active Directory defaults**.
+
+### Test the connection
+
+Enter someone's email and select **Test connection**. You see whether Onshore connected, whether the service account signed in, and who was found, with their groups.
+
+### Choose account creation
+
+Tick **Create an account on first sign-in when one of the person's groups maps to a role**, and map groups in [Groups and roles](/identity/groups-and-roles/).
+
+### Save
+
+</Steps>
+
+## How sign-in works
+
+1. The person types their email and **directory password** on the normal sign-in page.
+2. Onshore searches for them with the service account, then checks their password by signing in to the directory as them.
+3. Their groups decide their roles.
+4. They enter their Onshore code or use a passkey. The first time, they set up an authenticator.
+
+Directory passwords are **never stored** in Onshore.
+
+## Who uses the directory
+
+The directory checks passwords for people from its email domains who came from it, have no Onshore password, or are new. **Local accounts**, such as your own admin account, keep their own password.
+
+## Security
+
+- **Only encrypted connections**: `ldaps://`, or `ldap://` upgraded with StartTLS. Plain connections are refused.
+- **An empty password is refused**, because many directories treat it as an anonymous sign-in.
+- The email is escaped before it goes into a search filter, so it can't widen the search.
+- If more than one person matches, nobody is let in.
+- On Onshore Cloud, the directory must have a public address.
+
+<Callout type="info">
+Removing the directory means people from it can't sign in until an admin sets them a password.
+</Callout>
+
+Tested against OpenLDAP over LDAPS and StartTLS with a private CA. Active Directory hasn't been tried yet.

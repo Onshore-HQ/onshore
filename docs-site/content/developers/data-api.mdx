@@ -1,0 +1,105 @@
+---
+title: Data API
+description: Every data API endpoint. Tokenize, detokenize, records, lookup, people, resident checks, detection and flow checks.
+---
+
+import { Callout } from "nextra/components";
+
+# Data API
+
+<Callout>
+This page is a quick tour. The [API reference](/api-reference/) has every endpoint with full request and response schemas, examples and a client to try them; the [SDK references](/developers/sdks/) document each method.
+</Callout>
+
+All endpoints are under `https://<host>`, need `Authorization: Bearer <token>` (see [Authentication](/developers/authentication/)), and take and return JSON. Batches hold up to 500 items. Errors are described in [Errors and limits](/developers/errors/).
+
+## Tokenize
+
+`POST /v1/vaults/{vault}/tokenize`
+
+```json
+{ "items": [ { "field": "national_id", "value": "AB123456C", "subject_ref": "cust_1042" } ],
+  "continue_on_error": false }
+```
+
+Returns `results[]`, each with `index`, `token`, whether it already `existing`, or an `error`. A value that fails its field's format check gets `validation_failed` (422). Card numbers are refused.
+
+## Detokenize (reveal)
+
+`POST /v1/vaults/{vault}/detokenize`
+
+```json
+{ "items": [ { "token": "tok_uk_nino_7Hq2xP9LmA4c" } ], "purpose": "Ticket 88213" }
+```
+
+A **purpose is always required**. Each result has a `decision`: `plaintext`, `masked`, `token_only` or `denied`, with the `value` and the deciding `policy`. Add `"redaction": "masked"` or `"token_only"` to an item to ask for **less** than your rules allow; you can never get more.
+
+| Status | Means |
+| --- | --- |
+| 400 | Purpose missing |
+| 403 | Denied |
+| 404 | Unknown or expired token |
+| 429 | Reveal limit reached |
+| 503 | Key service unavailable: nothing is decrypted |
+
+## Records
+
+- `POST /v1/vaults/{vault}/records` with `{ "fields": { "national_id": "…", "phone": "…" }, "subject_ref": "cust_1042" }` stores several fields at once and returns a record ID and a token per field.
+- `GET /v1/vaults/{vault}/records/{id}` with an `X-RV-Purpose` header returns each field as your rules allow.
+- `PUT /v1/vaults/{vault}/tokens/{token}` with `{ "value": "…" }` changes the value behind a **new-token-each-time** (cell) token, which keeps pointing at it.
+
+## Lookup
+
+`POST /v1/vaults/{vault}/lookup` with `{ "field": "national_id", "value": "AB123456C" }` finds the token for a value **without decrypting**, through a blind index. Limited to 60 a minute per caller.
+
+## People (subjects)
+
+| Call | Does |
+| --- | --- |
+| `POST /v1/vaults/{vault}/subjects/search` | List people; a query matches a token, a customer reference or an exact value |
+| `GET /v1/vaults/{vault}/subjects/{id}` | One person's fields, masked at most |
+| `GET /v1/vaults/{vault}/subjects/{id}/export` | Export for an access request (needs an `export` rule and `X-RV-Purpose`) |
+| `DELETE /v1/vaults/{vault}/subjects/{id}` | Erase the person (needs a `delete` rule and `X-RV-Purpose`). A value shared with another person survives until its last owner is erased |
+| `POST /v1/vaults/{vault}/subjects/{id}/restrict` | Apply or lift a restriction. While set, nothing reveals |
+
+## Resident checks
+
+`POST /v1/vaults/{vault}/resident/check` asks a yes-or-no question about a stored value. The comparison runs in the country; only `true` or `false` comes back.
+
+```json
+{ "token": "tok_dob_…", "check": "age_at_least", "arg": "18", "purpose": "Onboarding eligibility" }
+```
+
+Checks: `equals`, `name_match`, `age_at_least`, `amount_at_least`. Needs a `compare` access rule, and shares the lookup rate limit.
+
+## Detect
+
+`POST /v1/detect`
+
+```json
+{ "text": "Refund to GB82 WEST 1234 5698 7654 32 failed. My NI number is AB 12 34 56 C",
+  "tokenize": true, "vault": "v_live_gb01" }
+```
+
+Returns `entities` (each with `type`, `start`, `end`, `score`, and for your own types `custom` and `entity_version`), the `ruleset_version`, and `text` with tokens when tokenizing. Name a `vault` for its packs and your own types to apply. `entities` limits by slug; `include_shadow` includes watch-only types. Text up to 1 MB. Card numbers are masked, never vaulted.
+
+## Flow checks
+
+Some jobs can't have Onshore in their path, such as a nightly copy to a foreign database. Before each batch leaves, send a sample:
+
+`POST /v1/vaults/{vault}/flows/{flow}/check` with `{ "text": "…" }`
+
+Onshore keeps **counts only**, never the text. Identifiers found count as passed unprotected (a leak); tokens count as protected. The first check puts the flow on the [residency map](/guides/residency-map/) as one Onshore sees.
+
+<Callout type="info">
+This is the job's own report: a job that stops checking isn't seen, and its flow goes quiet rather than red.
+</Callout>
+
+## Secure components and cloaking
+
+- `POST /v1/vaults/{vault}/client-tokens`: see [Secure components](/developers/secure-components/).
+- `POST /v1/vaults/{vault}/cloak`, `/uncloak`, `DELETE /twins/{id}`: see [Cloak API](/developers/cloak-api/).
+
+## OpenAPI
+
+A hand-maintained OpenAPI 3.1 file is in the repository at `docs/openapi.yaml`. It doesn't yet list the file and support tool endpoints.

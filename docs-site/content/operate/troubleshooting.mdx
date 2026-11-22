@@ -1,0 +1,47 @@
+---
+title: Troubleshooting
+description: Common problems and what to do about them.
+---
+
+# Troubleshooting
+
+## Everything fails with key_service_unavailable
+
+The key service is **sealed**, usually after a restart. Check with `./rv keys status`, and have three key holders run `./rv keys unseal`.
+
+## A service shows "Not running here"
+
+Optional services (logs, AI, proxy, adapters, files) only run when their Compose profile is on. Start it with `docker compose --profile <name> up -d`. A service that has never answered isn't reported as down.
+
+## A service shows as down
+
+Check its logs: `docker compose logs <service>`. Services report down after two missed checks (about a minute). If the control API itself is down, nothing is reported: check `/healthz` from outside.
+
+## Logs aren't reaching my vendor
+
+- Is the pipeline key right? A wrong key is refused.
+- With "buffer and retry", the processor answers 503 while the vault is unreachable; your collector should be retrying. Check the key service.
+- Check the destination URL on the connection.
+
+## Someone can't sign in with single sign-on
+
+- Is their email in the configured domains?
+- Do they exist in Onshore, or is account creation on, with a group that maps to a role?
+- Did they leave every mapped group? Then they're refused.
+- Is the groups claim configured at your provider? See [Provider guides](/identity/providers/).
+
+## "Too many attempts"
+
+Eight failed sign-ins for one email or address lock it for 15 minutes.
+
+## A data type won't publish
+
+The message says why: samples failed (fix the pattern or the samples), it matches more than 5% of benchmark lines (narrow it), or it's too slow (simplify the pattern).
+
+## Finding one request
+
+Copy the `request_id` from the error, and search for it in [Service logs](/guides/usage-and-service-logs/#service-logs).
+
+## Getting help
+
+Run `./rv support-bundle` and send the file. It holds versions, configuration without secrets, and redacted logs.

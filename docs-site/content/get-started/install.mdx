@@ -1,0 +1,131 @@
+---
+title: Install
+description: Run Onshore on your own server with Docker Compose, from a clean machine to a working install.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Install
+
+This page installs Onshore on one Linux server with Docker Compose. That's enough for a pilot and for many production installs. For Kubernetes, see [Kubernetes](/operate/kubernetes/). For a full list of settings, see [Configuration](/operate/configuration/).
+
+## Before you start
+
+| You need | Notes |
+| --- | --- |
+| A Linux server in the country your data must stay in | For a pilot: 4 vCPU, 16 GB RAM, 200 GB SSD. See [Requirements and sizing](/operate/requirements/) |
+| Docker Engine with the Compose plugin | Recent versions |
+| A DNS name for the install | For example `vault.yourbank.example`. People and systems reach Onshore at this address |
+| Outbound HTTPS | Only to the destinations you configure (your log vendor, model provider…). Onshore never needs to call home |
+| Three to five **key holders** | People who each keep one share of the master key. Any three of five unseal the key service |
+| Swap disabled or encrypted | So decrypted values never reach disk |
+
+<Callout type="warning">
+**The install's country is final.** Every vault on an install keeps data in that country, and it can't be changed later. Choose it carefully.
+</Callout>
+
+## Install
+
+<Steps>
+
+### Get the release and build or pull the images
+
+```sh
+cd deploy/compose
+docker compose --profile logs --profile ai --profile proxy --profile adapters --profile files --profile tools build
+```
+
+Profiles turn on optional services. Leave out what you don't need:
+
+| Profile | Service | Needed for |
+| --- | --- | --- |
+| `logs` | Log processor | Cleaning logs before they reach your log vendor |
+| `ai` | AI gateway | Using AI models without sending identifiers |
+| `proxy` | HTTP proxy | Protecting traffic to vendor APIs |
+| `adapters` | Support tool adapters | Freshdesk, Zoho Desk, Salesforce, Intercom |
+| `files` | File redactor | PDFs, images and recordings. Large image (it includes speech recognition) |
+| `tools` | The `rv` operator tool | Installing, migrating, keys, imports |
+
+### Write your settings
+
+```sh
+./rv init --host vault.yourbank.example --country gb
+```
+
+This writes `.env` with freshly generated secrets and prints a **bootstrap token**. Keep the token: you'll need it for first-time setup. Keep `.env` out of version control and out of backups of app configuration.
+
+| Option | Meaning |
+| --- | --- |
+| `--host` | The DNS name people and systems use |
+| `--country` | Two-letter code of the country this install keeps data in, such as `gb`, `de`, `ae`, `ng`. Asked for if left out |
+| `--license` | Path to an Enterprise licence file |
+| `--join` and `--primary` | Join an existing console as a linked install. See [Linked installs](/guides/linked-installs/) |
+
+### Start the database and key service
+
+```sh
+docker compose up -d keys postgres
+```
+
+### Create the master key shares
+
+```sh
+./rv keys init
+```
+
+This initialises the key service with **five shares, any three of which unseal it**. Each share is shown **once**. Give one to each key holder and have them store it safely, apart from each other. Nobody, including you, can recover a lost share later. See [Keys and unsealing](/operate/keys/).
+
+### Start the services
+
+```sh
+docker compose --profile logs --profile ai --profile proxy up -d
+```
+
+Add `--profile adapters` or `--profile files` if you built them.
+
+### Check the install
+
+```sh
+./rv doctor
+```
+
+You get a pass or fail report on every check, ready to attach to your change ticket.
+
+### Run first-time setup
+
+Open `https://vault.yourbank.example/`, paste the bootstrap token, and create the first admin. Then follow [First-time setup](/get-started/first-time-setup/).
+
+</Steps>
+
+## Your own certificate
+
+By default the edge creates an internal certificate. To use your own, put it in `certs/` and add to `.env`:
+
+```sh
+RV_TLS=/certs/cert.pem /certs/key.pem
+```
+
+## After a restart
+
+The key service starts **sealed**: nothing can be encrypted or decrypted, and every request that needs a key fails closed. Three key holders unseal it:
+
+```sh
+./rv keys unseal   # each key holder runs this and enters their share
+./rv keys status
+```
+
+## A linked install in another country (Enterprise)
+
+```sh
+./rv init --host vault.de.yourbank.example --country de --join rvj_… --primary https://onshore.yourbank.example
+```
+
+Get the join command from **Settings → Locations and laws** on your main console. The new install needs outbound HTTPS to the primary; the primary never connects in. If the primary uses a private certificate authority, set `RV_PRIMARY_CA=/certs/primary-ca.pem`.
+
+## Try it before installing
+
+`rv scan` reads a log file offline and reports what would leave the country. It changes nothing and needs no install:
+
+```sh
+cd data-plane && go run ./cmd/rv scan /path/to/app.log
+```

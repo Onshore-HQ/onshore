@@ -1,0 +1,86 @@
+---
+title: Log pipelines
+description: Point OpenTelemetry Collector, Fluent Bit or Vector at the log processor. Configuration for each, failure behaviour, and keys.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Log pipelines
+
+Create a log connection in the console first ([Logs](/guides/connections/logs/)). It gives you a **pipeline ID** and a **pipeline key**. Then change one output in your collector. Your applications don't change.
+
+<Tabs items={["OpenTelemetry Collector", "Fluent Bit", "Vector"]}>
+<Tabs.Tab>
+```yaml
+# Swap one exporter endpoint.
+exporters:
+  otlphttp/onshore:
+    endpoint: https://vault.yourbank.example/logs/otlp/<pipeline-id>
+    headers:
+      X-RV-Pipeline-Key: <pipeline-key>
+    # When the vault is unreachable the processor answers 503. These settings keep
+    # the batch here and retry; raw logs are never forwarded around it.
+    retry_on_failure: { enabled: true, max_elapsed_time: 0 }
+    sending_queue: { enabled: true, storage: file_storage }
+service:
+  pipelines:
+    logs:
+      exporters: [otlphttp/onshore]
+```
+
+OTLP over HTTP and gRPC are both accepted. Traces and metrics can go through the same pipeline.
+</Tabs.Tab>
+<Tabs.Tab>
+```ini
+[OUTPUT]
+    Name          http
+    Match         *
+    Host          vault.yourbank.example
+    Port          443
+    URI           /logs/http/<pipeline-id>
+    Format        json_lines
+    tls           On
+    tls.verify    On
+    Header        X-RV-Pipeline-Key <pipeline-key>
+    Retry_Limit   False
+    storage.total_limit_size 2G
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```toml
+[sinks.onshore]
+type = "http"
+inputs = ["your_logs"]
+uri = "https://vault.yourbank.example/logs/http/<pipeline-id>"
+encoding.codec = "json"
+request.headers.X-RV-Pipeline-Key = "<pipeline-key>"
+request.retry_attempts = 9007199254740991
+buffer.type = "disk"
+buffer.max_size = 2147483648
+```
+</Tabs.Tab>
+</Tabs>
+
+The processor forwards cleaned logs to the destination you gave in the console.
+
+## Behaviour
+
+| Situation | What happens |
+| --- | --- |
+| Watch only | Logs reach your vendor unchanged; identifiers are counted |
+| Protecting | Identifiers become tokens, masked or dropped, per type |
+| Vault unreachable, "buffer and retry" | The processor answers **503**, and your collector keeps the batch and retries |
+| Vault unreachable, "drop" | Lines are discarded |
+| Wrong or missing key | Refused |
+
+<Callout type="warning">
+When protecting, unredacted logs are **never** forwarded, whatever the failure setting. Configure your collector to buffer to disk and retry, as above.
+</Callout>
+
+## Keeping debugging possible
+
+Use "same value, same token" fields: the same customer always gets the same token, so you can still search your logs for one customer's activity.
+
+## Try a file first
+
+`rv scan <file>` reads a log file offline and reports what would leave the country, without an install.

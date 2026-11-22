@@ -1,0 +1,34 @@
+---
+title: TLS and domains
+description: Certificates, the paths Onshore serves, internal mutual TLS, and Cloud region names.
+---
+
+# TLS and domains
+
+## Certificates
+
+The edge serves HTTPS with **TLS 1.3**. By default it uses an internal certificate. For your own, put it in `deploy/compose/certs/` and set `RV_TLS="/certs/cert.pem /certs/key.pem"`.
+
+## One host, several paths
+
+| Path | Service |
+| --- | --- |
+| `/` | Console |
+| `/v1/*`, `/embed/*` | Vault API and secure components |
+| `/control/*` | Control API (and SCIM at `/control/scim/v2`) |
+| `/logs/*` | Log processor |
+| `/ai/*` | AI gateway |
+| `/proxy/*` | HTTP proxy |
+| `/files/*` | File redactor |
+| `/support/*` | Support tool webhooks and sidebars |
+| `/healthz` | Health check |
+
+`/internal/*` is never reachable from outside, on any service.
+
+## Internal traffic
+
+Services talk to each other over **mutual TLS** with an internal certificate authority created by `rv init`. The internal CA lasts 10 years; renewing means re-running `rv init` for certificates.
+
+## Onshore Cloud names
+
+Each Cloud region has its own names, which resolve only to servers in that country: `app.onshorevault.com` (the console), and `api`, `vault`, `logs`, `ai`, `proxy`, `files`, `connect` under `<country>.onshorevault.com`, such as `vault.gb.onshorevault.com`.

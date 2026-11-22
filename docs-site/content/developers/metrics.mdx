@@ -1,0 +1,35 @@
+---
+title: Metrics
+description: Prometheus metrics for Grafana, Datadog or any OpenMetrics scraper.
+---
+
+import { Callout } from "nextra/components";
+
+# Metrics
+
+`GET /control/v1/monitoring/metrics` with `Authorization: Bearer <metrics key>`, in Prometheus text format. Create the key in **Health & alerts → Metrics for Grafana or Datadog**. It reads these numbers and nothing else; there's one per organisation. Answers are cached for 15 seconds.
+
+```yaml
+scrape_configs:
+  - job_name: onshore
+    scheme: https
+    metrics_path: /control/v1/monitoring/metrics
+    authorization: { type: Bearer, credentials_file: /etc/prometheus/onshore-metrics-key }
+    static_configs: [{ targets: ["vault.yourbank.example"] }]
+```
+
+| Metric | Meaning |
+| --- | --- |
+| `rv_component_up{component}` | 1 if the service answered its last health checks |
+| `rv_audit_events_last_hour{module,action,decision}` | Audited operations in the last hour |
+| `rv_vault_latency_p50_ms`, `rv_vault_latency_p95_ms` | Tokenize and detokenize time, last hour |
+| `rv_open_alerts` | Alerts nobody has acknowledged |
+| `rv_webhook_deliveries_last_day{status}` | Webhook deliveries by outcome, last 24 hours |
+| `rv_webhook_oldest_pending_seconds` | Age of the oldest undelivered webhook |
+| `rv_siem_lag_events` | Audit events not yet sent to the SIEM |
+
+These are gauges over a rolling window, not counters: use them directly, not through `rate()`.
+
+<Callout type="warning">
+Metrics can't show Onshore's own failure. Alert on a **failed scrape**, and check `https://<host>/healthz` and the console's address from outside.
+</Callout>

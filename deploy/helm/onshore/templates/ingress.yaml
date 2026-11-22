@@ -1,0 +1,56 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: onshore
+  annotations:
+    # Internal traffic is mutual TLS, so the controller must present a client
+    # certificate from the internal CA (edge). /internal is never routed.
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/proxy-ssl-secret: "{{ .Release.Namespace }}/{{ .Values.internalTlsSecretPrefix }}-edge"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/ssl-protocols: TLSv1.3
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecret }}
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - { path: /control(/|$)(.*), pathType: ImplementationSpecific, backend: { service: { name: control-api, port: { number: 8081 } } } }
+          {{- if .Values.modules.logs }}
+          - { path: /logs(/|$)(.*), pathType: ImplementationSpecific, backend: { service: { name: log-processor, port: { number: 8090 } } } }
+          {{- end }}
+          {{- if .Values.modules.ai }}
+          - { path: /ai(/|$)(.*), pathType: ImplementationSpecific, backend: { service: { name: ai-gateway, port: { number: 8091 } } } }
+          {{- end }}
+          {{- if .Values.modules.proxy }}
+          - { path: /proxy(/|$)(.*), pathType: ImplementationSpecific, backend: { service: { name: http-proxy, port: { number: 8092 } } } }
+          {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: onshore-root
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/proxy-ssl-secret: "{{ .Release.Namespace }}/{{ .Values.internalTlsSecretPrefix }}-edge"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/ssl-protocols: TLSv1.3
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~* ^/internal { return 404; }
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecret }}
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - { path: /v1, pathType: Prefix, backend: { service: { name: vault-api, port: { number: 8080 } } } }
+          - { path: /healthz, pathType: Exact, backend: { service: { name: vault-api, port: { number: 8080 } } } }
+          - { path: /, pathType: Prefix, backend: { service: { name: console, port: { number: 3000 } } } }

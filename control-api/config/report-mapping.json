@@ -1,0 +1,78 @@
+{
+  "version": "2026-11-provisional-2",
+  "note": "Provisional. No source reviewed says tokenization takes data out of scope of the CBN circular (PSS/DIR/PUB/CIR/001/004, 15 June 2026), and the CBN FAQs are pending. Edit this file, not code, when guidance lands. This pack is audit evidence, not a statement of compliance.",
+  "questions": [
+    {
+      "question": "Where is payment transaction data stored and managed, including backups and disaster recovery?",
+      "rule": "CBN circular s.2, effective 1 January 2027 (scope as read by Credence Law and Pavestones)",
+      "sections": [
+        "data_location",
+        "protected"
+      ]
+    },
+    {
+      "question": "Where are encryption keys held, and who administers them?",
+      "rule": "CBN \"managed in Nigeria\": key management and access administration (Pavestones)",
+      "sections": [
+        "data_location",
+        "changes"
+      ]
+    },
+    {
+      "question": "Who can access it, and from where?",
+      "rule": "CBN \"managed in Nigeria\"; offshore support arrangements (Credence Law)",
+      "sections": [
+        "access"
+      ]
+    },
+    {
+      "question": "Are logs, audit trails, support copies or analytics exports replicated offshore?",
+      "rule": "CBN circular as read by Credence Law",
+      "sections": [
+        "outbound_flows"
+      ]
+    },
+    {
+      "question": "What still flows to foreign vendors, and on what ground?",
+      "rule": "NDPA Part VIII and GAID 2025 Schedule 5: adequacy, an approved instrument, or section 43. The NDPC had issued no instrument as of May 2026",
+      "sections": [
+        "outbound_flows"
+      ]
+    },
+    {
+      "question": "Can you prove the access log was not altered?",
+      "rule": "General audit expectation",
+      "sections": [
+        "integrity"
+      ]
+    },
+    {
+      "question": "Can you answer a person's access or deletion request?",
+      "rule": "NDPA data subject rights",
+      "sections": [
+        "data_subject_requests"
+      ]
+    },
+    {
+      "question": "How fast would you notice misuse?",
+      "rule": "NDPA breach notification duties. Confirm the current timing with your DPCO",
+      "sections": [
+        "alerts"
+      ]
+    },
+    {
+      "question": "Who changed security settings, and who approved?",
+      "rule": "Change control",
+      "sections": [
+        "changes"
+      ]
+    },
+    {
+      "question": "Where else do identifiers sit?",
+      "rule": "Data mapping for the NDPC compliance audit (GAID: within 15 months of starting business, then annually)",
+      "sections": [
+        "residency_map"
+      ]
+    }
+  ]
+}

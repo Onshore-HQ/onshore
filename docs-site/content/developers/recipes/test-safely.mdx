@@ -1,0 +1,137 @@
+---
+title: Test safely
+description: Test vaults, dry runs, made-up values that pass every format check, unit tests without a vault, and CI set-up.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Test safely
+
+<Callout type="error">
+Never use real customer data in development or tests, including "just one real ID to check it works". Use a test vault and the made-up values below.
+</Callout>
+
+## Test vaults
+
+In **Vaults → New vault**, choose the environment **Test, with made-up customers**. Its ID starts `v_test_`, it comes with made-up customers to work with, and the console lets you try values on its fields (it never does on live vaults). It behaves exactly like a live vault: same checks, rules, audit and limits. Keep test and live strictly apart:
+
+- a separate service account and key for each test vault,
+- the vault ID in configuration (`ONSHORE_VAULT`), never hard-coded,
+- access rules copied from live with [Copy setup](/guides/settings/) so tests exercise the real rules.
+
+## Dry runs
+
+`tokenize` with `dryRun` (`dry_run` in Python and the API) runs every check (format, access rules) and stores nothing. Use it to validate an import file, or in a health check that proves the service account works without writing data.
+
+```ts
+const results = await vault.tokenize(VAULT, rows, { dryRun: true, continueOnError: true });
+```
+
+## Made-up values that pass format checks
+
+These pass the vault's format and check-digit validation. They're for test vaults only. Some may happen to match a real person's number; that's harmless in a test vault holding no real data, but never use them anywhere real.
+
+| Data type | Value |
+| --- | --- |
+| `uk_nino` (UK National Insurance) | `AB123456C` |
+| `uk_nhs` | `943 476 5919` |
+| `uk_bank_account` (sort code and account) | `20-00-00 55779911` |
+| `iban` | `GB82WEST12345698765432`, `DE89370400440532013000`, `AE070331234567890123456` |
+| `eu_vat` | `DE123456789`, `FR40303265045` |
+| `de_tax_id` | `86095742719` |
+| `us_ssn` | `123-45-6789` |
+| `us_itin` | `912-70-1234` |
+| `us_routing` | `011000015` |
+| `ca_sin` | `046 454 286` |
+| `br_cpf` | `529.982.247-25` |
+| `in_aadhaar` | `2341 2341 2346` |
+| `in_pan` | `ABCPE1234F` |
+| `sg_nric` | `S1234567D` |
+| `za_id` | `8001015009087` |
+| `emirates_id` | `784-1990-1234567-6` |
+| `sa_national_id` | `1012345672` |
+| `eg_national_id` | `29001010101230` |
+| `ghana_card` | `GHA-123456789-0` |
+| `ke_national_id` | `12345678` |
+| `ke_kra_pin` | `A123456789B` |
+| `email` | `sam@example.com` (`example.com` is reserved for documentation) |
+| `phone` | `+44 7700 900123` (UK numbers `07700 900000`–`900999` are reserved for drama) |
+| `date` | `1988-03-14` |
+| `person_name` | `Samuel Adeyemi` |
+
+Card numbers are always refused by the vault. For card-detection tests, `4111 1111 1111 1111` is the well-known test card and is masked, never stored.
+
+Values that must **fail**, for negative tests: `GB00WEST12345698765432` (bad IBAN check digits), `943 476 5918` (bad NHS check digit), `ABCDE1234F` (not a valid PAN holder type).
+
+## Unit tests without a vault
+
+Every server SDK can point at a fake server. The only endpoint the client needs is `POST /v1/auth/token` returning `{"access_token":"t","expires_in":900}`; script the rest for your test. Generate a throwaway key: any 32 random bytes, base64.
+
+<Tabs items={["Node.js", "Python", "Go"]}>
+<Tabs.Tab>
+```ts
+const fakeFetch: typeof fetch = async (url, init) => {
+  const path = new URL(String(url)).pathname;
+  if (path === "/v1/auth/token") return Response.json({ access_token: "t", expires_in: 900 });
+  if (path.endsWith("/tokenize")) {
+    const { items } = JSON.parse(String(init!.body));
+    return Response.json({ results: items.map((_: unknown, index: number) => ({ index, token: `tok_test_${index}abcdefgh` })) });
+  }
+  return Response.json({ error: { code: "invalid_request", message: "not scripted" } }, { status: 400 });
+};
+const vault = new VaultClient({ baseUrl: "https://vault.test", serviceAccountId: "sa", keyId: "k",
+  privateKey: crypto.randomBytes(32).toString("base64"), fetch: fakeFetch, maxAttempts: 1 });
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+from unittest.mock import patch
+import io, json
+
+class FakeResponse(io.BytesIO):
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+
+def fake_urlopen(req, timeout=None, context=None):
+    if req.full_url.endswith("/v1/auth/token"):
+        return FakeResponse(json.dumps({"access_token": "t", "expires_in": 900}).encode())
+    return FakeResponse(json.dumps({"results": [{"index": 0, "token": "tok_test_0abcdefgh"}]}).encode())
+
+with patch("urllib.request.urlopen", fake_urlopen):
+    assert vault.tokenize("v_test_1", [{"field": "email", "value": "sam@example.com"}])[0]["token"]
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    if r.URL.Path == "/v1/auth/token" {
+        fmt.Fprint(w, `{"access_token":"t","expires_in":900}`)
+        return
+    }
+    fmt.Fprint(w, `{"results":[{"index":0,"token":"tok_test_0abcdefgh"}]}`)
+}))
+defer srv.Close()
+client, _ := vault.New(srv.URL, "sa", "k", base64.StdEncoding.EncodeToString(make([]byte, 32)))
+```
+</Tabs.Tab>
+</Tabs>
+
+Test the paths that matter most, which are the failures: a `denied` decision, `token_not_found` after an erasure, `validation_failed` on bad input, and a thrown reveal (your code must show nothing).
+
+## CI
+
+- Store the test service account's key as a CI secret; never in the repository.
+- Use a test vault per environment (CI, staging), or per developer for local work.
+- Run integration tests against the test vault on merges, and unit tests with a fake on every push.
+- Erase what tests create: tokenize with `subject_ref: "ci-${runId}"`, then `searchSubjects` and `eraseSubject` in teardown.
+
+```ts
+afterAll(async () => {
+  const { subjects } = await vault.searchSubjects(VAULT, { query: `ci-${process.env.GITHUB_RUN_ID}` });
+  for (const s of subjects) await vault.eraseSubject(VAULT, s.id, "CI teardown");
+});
+```
+
+## Trying the API by hand
+
+The [API reference](/api-reference/) has a built-in client. Get a bearer token first (sign an assertion as in [Authentication](/developers/authentication/)), paste it into **Authentication**, set the server to your install, and send requests against a test vault.

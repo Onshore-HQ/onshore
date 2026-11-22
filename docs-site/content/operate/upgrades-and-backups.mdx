@@ -1,0 +1,56 @@
+---
+title: Upgrades and backups
+description: Upgrading safely, verifying releases, backing up the database, and restoring.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Upgrades and backups
+
+## Upgrade
+
+<Steps>
+
+### Verify the release
+
+```sh
+./rv bundle verify
+```
+
+### Back up
+
+Take a database backup (below).
+
+### Pull or build the new images
+
+```sh
+docker compose --profile logs --profile ai --profile proxy build   # or pull
+```
+
+### Migrate and restart
+
+```sh
+docker compose run --rm migrate
+docker compose --profile logs --profile ai --profile proxy up -d
+./rv doctor
+```
+
+</Steps>
+
+Migrations only move forward. Always back up first.
+
+## Back up
+
+Back up PostgreSQL with your usual tools (`pg_dump`, or your platform's snapshots), **to a destination in the same country**. Values in the dump are encrypted, and useless without the key service.
+
+Also keep, separately and securely: `.env`, and the key holders' shares (held by the holders, never with backups).
+
+<Callout type="warning">
+A backup restored without the matching key service and shares can't be decrypted. That's by design.
+</Callout>
+
+## Restore
+
+1. Restore the database.
+2. Start the key service and unseal it with three shares.
+3. Start the services and run `./rv doctor`.

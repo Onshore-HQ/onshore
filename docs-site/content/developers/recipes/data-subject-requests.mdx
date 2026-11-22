@@ -1,0 +1,144 @@
+---
+title: Data subject requests
+description: Handle access, erasure and restriction requests end to end, under GDPR, NDPA, POPIA, LGPD, DPDP and similar laws.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Data subject requests
+
+Privacy laws give people rights over their data: to get a copy (access), to have it deleted (erasure), and to stop it being used (restriction). With the vault holding the sensitive values and grouping them by person, each request is a few calls.
+
+| Right | GDPR / UK GDPR | Nigeria NDPA | South Africa POPIA | Brazil LGPD | India DPDP | Call |
+| --- | --- | --- | --- | --- | --- | --- |
+| Access | Art. 15 | s. 34 | s. 23 | Art. 18 | s. 11 | `exportSubject` |
+| Erasure | Art. 17 | s. 34 | s. 24 | Art. 18 | s. 12 | `eraseSubject` |
+| Restriction | Art. 18 | s. 34 | s. 24 | Art. 18 | | `restrictSubject` |
+
+These references are for orientation, not legal advice. Your other systems (your database, warehouse, email tool) hold the rest of the person's data, so a request also needs work there; with tokens in those systems, erasing in the vault makes their copies useless.
+
+## Set up a service account for requests
+
+Give requests their own service account, with a rule allowing `search`, `export` and `delete` and nothing else, used only by your privacy team's tool. Every action is audited under it, with the purpose you give.
+
+## Find the person
+
+<Steps>
+
+### Verify who's asking
+
+Confirm the requester's identity in your own systems first. Then map them to your customer ID.
+
+### Find them in the vault
+
+```ts
+const { subjects } = await vault.searchSubjects(VAULT, { query: customerId });
+if (subjects.length === 0) return { held: false };
+const person = subjects[0];
+// { id: "3f2c…", ref: "cust_1042", field_count: 6, restricted: false, last_accessed: "…" }
+```
+
+Searching by your customer reference (`subject_ref`) is exact. You can also search by a token or an exact value, which helps when someone writes in with an ID number but no account.
+
+</Steps>
+
+## Access request
+
+```ts
+const rows = await vault.exportSubject(VAULT, person.id, `DSAR ${request.reference}`);
+// [{ field: "national_id", data_type: "uk_nino", value: "AB123456C", token: "tok_…", decision: "plaintext" }, …]
+
+const report = rows.map(({ field, data_type, value, decision }) => ({
+  what: field, type: data_type,
+  value: decision === "plaintext" ? value : "(held, not shown: " + decision + ")",
+}));
+await deliverSecurely(request, report);
+```
+
+Values come back as the export rule allows; give the requests account plaintext for an export. Deliver through a secure channel (a portal download, an encrypted file), never plain email.
+
+`getSubject` gives a masked overview (what's held, without values) for your team to review first.
+
+## Erasure request
+
+```ts
+const { erased_records } = await vault.eraseSubject(VAULT, person.id, `Erasure ${request.reference}`);
+await db.customers.anonymise(customerId);   // your own systems too
+await recordCompletion(request, { erased_records });
+```
+
+What happens:
+
+- Every value tied to the person is deleted, with its encryption, and their tokens return `token_not_found` from then on, everywhere.
+- A value shared with someone else (two people with the same phone number in a deterministic field) survives until its last owner is erased.
+- The audit log keeps a record that an erasure happened, by whom and why, without any values.
+- Backups age out on your backup schedule. State that schedule in your privacy notice.
+
+<Callout type="error">
+Erasure can't be undone. Check legal holds first: a law may require you to keep some data (anti-money-laundering records, for example) even after an erasure request. Restrict instead while you check.
+</Callout>
+
+### Erasing values in your other systems
+
+Because your database holds tokens, a token whose value is erased is just a meaningless string. You can leave it, or delete the column value for tidiness. Copies in your warehouse, logs and vendors become unusable without anyone touching them, which is the main benefit of tokenizing at the source.
+
+## Restriction request
+
+```ts
+await vault.restrictSubject(VAULT, person.id, true, `Objection received, case ${caseId}`);
+```
+
+While restricted, nothing about the person reveals, to anyone, whatever the rules say: every reveal returns `denied`, and secure components show nothing. Values stay stored. Only an approved break-glass request gets past a restriction, and it's flagged in the audit log.
+
+Lift it when the matter is resolved:
+
+```ts
+await vault.restrictSubject(VAULT, person.id, false, `Dispute resolved, case ${caseId}`);
+```
+
+## A complete handler
+
+<Tabs items={["Node.js", "Python"]}>
+<Tabs.Tab>
+```ts
+export async function handleRequest(req: { type: "access" | "erasure" | "restriction" | "lift"; customerId: string; reference: string }) {
+  const { subjects } = await vault.searchSubjects(VAULT, { query: req.customerId });
+  if (!subjects.length) return { status: "nothing held" };
+  const id = subjects[0].id;
+  const purpose = `${req.type} request ${req.reference}`;
+
+  switch (req.type) {
+    case "access": return { status: "exported", rows: await vault.exportSubject(VAULT, id, purpose) };
+    case "erasure": return { status: "erased", ...(await vault.eraseSubject(VAULT, id, purpose)) };
+    case "restriction": return { status: "restricted", restricted: await vault.restrictSubject(VAULT, id, true, purpose) };
+    case "lift": return { status: "lifted", restricted: await vault.restrictSubject(VAULT, id, false, purpose) };
+  }
+}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+def handle_request(kind: str, customer_id: str, reference: str) -> dict:
+    found = vault.search_subjects(VAULT, customer_id)["subjects"]
+    if not found:
+        return {"status": "nothing held"}
+    sid, purpose = found[0]["id"], f"{kind} request {reference}"
+    if kind == "access":
+        return {"status": "exported", "rows": vault.export_subject(VAULT, sid, purpose)}
+    if kind == "erasure":
+        return {"status": "erased", **vault.erase_subject(VAULT, sid, purpose)}
+    if kind in ("restriction", "lift"):
+        return {"status": kind, "restricted": vault.restrict_subject(VAULT, sid, kind == "restriction", purpose)}
+    raise ValueError(kind)
+```
+</Tabs.Tab>
+</Tabs>
+
+## Proving it
+
+The [audit log](/guides/audit-log/) records each search, export, erasure and restriction with the service account, the purpose and the time. The **Reports** page can produce a data subject request report for a period, for your records or a regulator.
+
+## Next
+
+- [People and customer records in the console](/guides/customer-records/)
+- [Audit log](/guides/audit-log/)

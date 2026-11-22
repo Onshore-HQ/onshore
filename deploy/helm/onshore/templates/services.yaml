@@ -1,0 +1,29 @@
+{{- $root := . -}}
+{{- $db := printf "- to: [{ ipBlock: { cidr: %s } }]\n  ports: [{ port: %v }]" .Values.database.cidr .Values.database.port -}}
+{{- $toVault := "- to: [{ podSelector: { matchLabels: { app.kubernetes.io/component: vault-api } } }]\n  ports: [{ port: 8080 }]" -}}
+{{- $toControl := "- to: [{ podSelector: { matchLabels: { app.kubernetes.io/component: control-api } } }]\n  ports: [{ port: 8081 }]" -}}
+{{- $keys := printf "- to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: %s } } }]\n  ports: [{ port: %v }]" .Values.keyService.namespace .Values.keyService.port -}}
+{{- $out := printf "- to:\n    - ipBlock:\n        cidr: %s\n        except: %s\n  ports: [{ port: 443 }]" .Values.egress.cidr (toJson .Values.egress.except) -}}
+{{- $vaultEnv := printf "%s\n%s\n%s\n%s\n%s\n%s\n- { name: RV_ENV, value: production }\n- { name: KEY_BACKEND, value: %s }\n- { name: OPENBAO_ADDR, value: %q }\n- { name: OPENBAO_CACERT, value: /tls/ca.pem }\n- { name: RV_TLS_CLIENT_CA, value: /tls/ca.pem }\n- { name: RV_TRUSTED_PROXIES, value: %q }\n- { name: LISTEN_ADDR, value: \":8080\" }" (include "rv.secret" (dict "root" . "key" "DATABASE_URL" "from" "RV_VAULT_DATABASE_URL")) (include "rv.secret" (dict "root" . "key" "OPENBAO_TOKEN")) (include "rv.secret" (dict "root" . "key" "RV_INTERNAL_TOKEN")) (include "rv.secret" (dict "root" . "key" "RV_TOKEN_SIGNING_SEED")) (include "rv.secret" (dict "root" . "key" "RV_USER_TOKEN_PUBLIC_KEY")) (include "rv.secret" (dict "root" . "key" "RV_LICENCE")) .Values.keyService.backend .Values.keyService.address .Values.trustedProxies -}}
+{{ include "rv.deployment" (dict "root" . "name" "vault-api" "image" "vault-api" "port" 8080 "replicas" .Values.replicas.vaultApi "resources" .Values.resources.vaultApi "env" $vaultEnv) }}
+---
+{{ include "rv.netpol" (dict "root" . "name" "vault-api" "port" 8080 "from" (list "control-api" "console" "log-processor" "ai-gateway" "http-proxy") "egress" (printf "%s\n%s" $db $keys)) }}
+---
+{{- $controlEnv := printf "%s\n%s\n%s\n%s\n%s\n- { name: DATABASE_CA, value: %q }\n- { name: VAULT_INTERNAL_URL, value: \"https://vault-api:8080\" }\n- { name: RV_TRUSTED_PROXIES, value: %q }\n- { name: RV_HOST, value: %q }\n- { name: RV_TLS_CA, value: /tls/ca.pem }\n- { name: PORT, value: \"8081\" }" (include "rv.secret" (dict "root" . "key" "DATABASE_URL" "from" "RV_CONTROL_DATABASE_URL")) (include "rv.secret" (dict "root" . "key" "RV_INTERNAL_TOKEN")) (include "rv.secret" (dict "root" . "key" "RV_USER_TOKEN_SEED")) (include "rv.secret" (dict "root" . "key" "RV_CONTROL_SECRET")) (include "rv.secret" (dict "root" . "key" "RV_BOOTSTRAP_TOKEN")) .Values.database.caPath .Values.trustedProxies .Values.host }}
+{{ include "rv.deployment" (dict "root" . "name" "control-api" "image" "control-api" "port" 8081 "replicas" .Values.replicas.controlApi "resources" .Values.resources.default "env" $controlEnv) }}
+---
+{{ include "rv.netpol" (dict "root" . "name" "control-api" "port" 8081 "from" (list "console") "egress" (printf "%s\n%s" $db $toVault)) }}
+---
+{{- $consoleEnv := "- { name: CONTROL_API_URL, value: \"https://control-api:8081\" }\n- { name: VAULT_API_URL, value: \"https://vault-api:8080\" }\n- { name: RV_TLS_CA, value: /tls/ca.pem }" }}
+{{ include "rv.deployment" (dict "root" . "name" "console" "image" "console" "port" 3000 "replicas" .Values.replicas.console "resources" .Values.resources.default "env" $consoleEnv) }}
+---
+{{ include "rv.netpol" (dict "root" . "name" "console" "port" 3000 "from" (list) "egress" (printf "%s\n%s" $toVault $toControl)) }}
+{{- range $m := list (dict "on" .Values.modules.logs "name" "log-processor" "port" 8090 "replicas" .Values.replicas.logProcessor) (dict "on" .Values.modules.ai "name" "ai-gateway" "port" 8091 "replicas" .Values.replicas.aiGateway) (dict "on" .Values.modules.proxy "name" "http-proxy" "port" 8092 "replicas" .Values.replicas.httpProxy) }}
+{{- if $m.on }}
+---
+{{- $env := printf "%s\n%s\n- { name: VAULT_INTERNAL_URL, value: \"https://vault-api:8080\" }\n- { name: RV_TLS_CLIENT_CA, value: /tls/ca.pem }\n- { name: LISTEN_ADDR, value: \":%v\" }" (include "rv.secret" (dict "root" $root "key" "DATABASE_URL" "from" "RV_VAULT_DATABASE_URL")) (include "rv.secret" (dict "root" $root "key" "RV_INTERNAL_TOKEN")) $m.port }}
+{{ include "rv.deployment" (dict "root" $root "name" $m.name "image" $m.name "port" $m.port "replicas" $m.replicas "resources" $root.Values.resources.default "env" $env) }}
+---
+{{ include "rv.netpol" (dict "root" $root "name" $m.name "port" $m.port "from" (list) "egress" (printf "%s\n%s\n%s" $db $toVault $out)) }}
+{{- end }}
+{{- end }}

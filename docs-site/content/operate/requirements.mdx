@@ -1,0 +1,36 @@
+---
+title: Requirements and sizing
+description: Server sizes for a pilot, production and high availability, and what each install needs.
+---
+
+# Requirements and sizing
+
+| Profile | For | Servers | Each server |
+| --- | --- | --- | --- |
+| **Pilot** | Proof of concept | 1 | 4 vCPU, 16 GB RAM, 200 GB SSD |
+| **Standard** | A fintech or lender in production | 1 app + 1 database replica | 8 vCPU, 32 GB RAM, 500 GB SSD |
+| **High availability** | Banks | 3 app nodes, PostgreSQL primary and replica, HSM | 8 vCPU, 32 GB RAM each |
+
+These are starting points per install. The file redactor (speech and image recognition) is the heaviest service; leave it out if you don't redact files.
+
+## Each install needs
+
+- Linux with Docker Engine and Compose, in the country its data must stay in.
+- A DNS name, and port 443 reachable by your people and systems.
+- Outbound HTTPS only to destinations you configure. Onshore never calls home; a linked install needs outbound HTTPS to its primary.
+- Swap disabled or encrypted.
+- Three to five key holders.
+- A backup target for the database, in the same country.
+
+## Measured performance
+
+On a 2019 laptop with everything in Docker, through TLS (re-measure on real servers before relying on these):
+
+| Measure | p95 | Throughput |
+| --- | --- | --- |
+| Tokenize, batch of 10, one client | 18–20 ms | about 70 batches/s |
+| Detokenize, batch of 10, one client | 7–8 ms | about 160 batches/s |
+| Tokenize, batch of 10, 10 clients | 37–43 ms | 300–335 batches/s |
+| Detokenize, batch of 10, 10 clients | 22–33 ms | 525–620 batches/s |
+| Log processor, through the edge | — | about 29,000 lines/s |
+| Detection, 1 KB on one core | 0.61 ms | — |

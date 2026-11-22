@@ -1,0 +1,38 @@
+---
+title: Health and alerts
+description: Whether every service is answering, what happened in the last hour, webhooks, and metrics for Grafana or Datadog.
+---
+
+import { Callout } from "nextra/components";
+
+# Health and alerts
+
+<Shot src="/screenshots/health.png" alt="Health & alerts: services and their state, the last hour, webhooks, and metrics" />
+
+## Services
+
+Each service's state and since when: the vault API, key service, log processor, AI gateway, HTTP proxy, file redactor, adapters. A service is checked every 30 seconds and reported down after two misses, so a failure takes up to about a minute to appear. One that's never answered shows as **Not running here**, because optional services may not be installed.
+
+## Last hour
+
+How fast 95% of vault requests were, open alerts, webhooks delivered and given up on in 24 hours, events waiting for the SIEM, and a count of actions by result.
+
+## Webhooks
+
+Send reveals, refusals, policy changes and service failures to your own systems, such as Slack via a relay or your incident tool.
+
+1. Select **New webhook**, enter an `https` address and choose the event types.
+2. Copy the **signing secret**: it's shown once.
+3. Use **Send test** to check your receiver.
+
+Each webhook shows its deliveries. You can **Turn off**, **Turn on**, **Rotate secret** (the old one keeps signing for 24 hours) or **Delete** it. After 100 failures in a row, a webhook turns itself off and raises an alert.
+
+Event types, payloads and how to check signatures: [Webhooks](/developers/webhooks/).
+
+## Metrics for Grafana or Datadog
+
+**Create key** gives a metrics key, shown once. It reads these numbers and does nothing else. Point Prometheus, Grafana Agent or Datadog at the metrics endpoint. See [Metrics](/developers/metrics/).
+
+<Callout type="warning">
+Onshore can't report its own failure: if the control API stops, nothing is sent. Alert on a failed metrics scrape, and check `/healthz` from outside the install.
+</Callout>

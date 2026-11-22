@@ -1,0 +1,43 @@
+---
+title: Editions
+description: Free, Enterprise and Onshore Cloud. The same software in every edition.
+---
+
+# Editions
+
+Onshore is open source, and every edition runs the same containers. What changes is how many countries one console covers, who runs the servers, and a few enterprise features.
+
+| | **Free** | **Enterprise** | **Onshore Cloud** |
+| --- | --- | --- | --- |
+| Who runs it | You, on your servers | You, on your servers | Onshore, in each country we open |
+| Countries | One per install | An install in each country, linked to one console | A region per country |
+| Vault, detection, access rules, audit, reports | ✓ | ✓ | ✓ |
+| Logs, AI gateway, HTTP proxy, file redaction, support tools, secure components, page protection | ✓ | ✓ | ✓ |
+| Residency map, your own data types, country packs | ✓ | ✓ | ✓ |
+| Password with authenticator code or passkey | ✓ | ✓ | ✓ |
+| Groups to roles | ✓ | ✓ | ✓ |
+| Single sign-on (SAML 2.0, OIDC) | — | ✓ | ✓ |
+| SCIM provisioning, LDAP | — | ✓ | ✓ |
+| Linked installs in several countries | — | ✓ | Built in |
+| Licence | None | Offline licence file | None |
+| Support | Community | From Onshore | From Onshore |
+
+## How Onshore knows your edition
+
+- **Onshore Cloud** installs say so in their configuration.
+- A self-hosted install is **Enterprise** when it has a valid licence that includes the `enterprise` module. You set the licence with `rv init --license` when installing. The licence is checked offline: the product never phones home.
+- Anything else is **Free**.
+
+You can see the licence under **Settings → Organisation**.
+
+<Shot src="/screenshots/settings-org.png" alt="Settings, Organisation tab, showing the organisation name, hosting facility, country and licence" />
+
+## What happens if a licence lapses
+
+The product keeps running. Features already set up, such as single sign-on, keep working so nobody is locked out; you just can't set new ones up. Upgrades stop until the licence is renewed.
+
+## Moving between editions
+
+- **Free to Enterprise:** add a licence file and restart. Nothing is migrated.
+- **Adding countries:** in Enterprise, link a new install in each country. See [Linked installs](/guides/linked-installs/).
+- **Self-hosted to Cloud, or back:** use [Copy setup](/guides/settings/#copy-setup) to move fields, data types, access rules and connections. Customer values never move between countries.

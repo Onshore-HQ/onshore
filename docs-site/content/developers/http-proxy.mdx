@@ -1,0 +1,62 @@
+---
+title: HTTP proxy formats
+description: How the HTTP proxy reads JSON, forms, XML and SOAP, multipart and headers, its file policy, and what it refuses.
+---
+
+import { Callout } from "nextra/components";
+
+# HTTP proxy formats
+
+Create a route in the console first ([Web APIs](/guides/connections/http-proxy/)). Call `https://<host>/proxy/<route-id>/<path>` with `X-RV-Route-Key`. **Whatever the proxy can't read in full, it doesn't forward.**
+
+| Body | How it's handled |
+| --- | --- |
+| JSON | Field rules and detection |
+| Forms (`application/x-www-form-urlencoded`) | Rules name fields: `$.bvn`, `$.customer.bvn` for `customer[bvn]`, `$.items[*].id` for `items[0][id]`. Every value of a repeated field is replaced |
+| XML and SOAP | Values edited where they stand: namespaces, prefixes, order and whitespace arrive as sent. Rules use local names: `$.Envelope.Body.Check.BVN`, `$.Check.@id` for an attribute. Detection also reads attributes and comments |
+| Multipart | Each field and text file is read; file names are checked. Binary parts follow the file policy |
+| Plain text, CSV | Detection only. A route with field rules refuses it |
+| PDF, images, binary | The file policy |
+
+What the bytes are decides, not the label.
+
+## File policy
+
+| Policy | Effect |
+| --- | --- |
+| `refuse` (default) | A binary body or part is refused with 415 |
+| `redact` | PDFs and images go through the file redactor and come back flattened. Anything else, and files the OCR can't read with confidence, are refused. Needs the `files` profile |
+| `pass` | Sent unread and counted as uninspected. An admin must choose this |
+
+## Headers and query strings
+
+```json
+{ "redact_headers": [{ "header": "X-Customer-BVN", "field": "bvn" }],
+  "unredact_headers": [{ "header": "X-Account-Token" }],
+  "response_redact_headers": [{ "header": "X-Result-BVN" }],
+  "dlp_excluded_headers": ["X-Trace-Note"],
+  "dlp_excluded_params": ["reference"] }
+```
+
+Detection reads request headers and every query parameter, skipping credentials and plumbing such as `Authorization`, `Content-Type` and `Accept` unless a rule names them. Rules can't name framing headers (`Host`, `Content-Length`) or Onshore's own `X-RV-` headers.
+
+## What's refused with 415, and why
+
+| Refused | Because |
+| --- | --- |
+| A `DOCTYPE` in XML | It can define entities the upstream would expand and the proxy can't see |
+| Malformed XML, not UTF-8, or deeper than 256 levels | It can't be read in full |
+| Compressed bodies | They can't be read |
+| A charset other than UTF-8, ASCII, Latin-1 or Windows-1252, or a NUL byte | A value could pass unseen |
+| Base64 or quoted-printable multipart parts, nested multipart | They carry a value past the checks |
+| A field rule naming a binary part | A rule that can't be honoured mustn't be ignored |
+| Over 200 parts or 10,000 form fields | Limits on work per request |
+
+## Things to check on your upstream
+
+- Forms and multipart are **rewritten** in one canonical form. An upstream that checks a signature over the raw body will fail.
+- Multipart keeps only the fields: preamble, epilogue and part headers other than `Content-Disposition` and `Content-Type` are dropped.
+
+<Callout type="warning">
+Values in the **URL path** aren't checked (`/customers/22333444558` passes), because rewriting a path breaks the request. Detection doesn't run on responses: responses get only the rules you name.
+</Callout>

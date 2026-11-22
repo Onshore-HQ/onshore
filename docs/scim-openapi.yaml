@@ -1,0 +1,133 @@
+openapi: 3.1.0
+info:
+  title: Onshore SCIM 2.0
+  version: 0.1.0
+  summary: "Users and groups pushed by an identity provider."
+  description: |
+    SCIM 2.0 (RFC 7643, RFC 7644) for identity providers such as Entra ID, Okta, OneLogin, JumpCloud and
+    authentik. Authenticate with a SCIM token (`rvscim_…`) from **Settings → Sign-in → Directory sync**.
+    Send `application/scim+json` (plain JSON is accepted).
+
+    Errors use SCIM's format: `{"schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"], "status", "scimType", "detail"}`.
+    Not supported: bulk, sorting, ETags, password changes.
+servers:
+  - url: https://vault.yourbank.example/control/scim/v2
+security: [{ bearer: [] }]
+tags:
+  - name: Discovery
+  - name: Users
+  - name: Groups
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, description: "A SCIM token, `rvscim_…`." }
+  schemas:
+    User:
+      type: object
+      properties:
+        schemas: { type: array, items: { type: string }, example: ["urn:ietf:params:scim:schemas:core:2.0:User"] }
+        id: { type: string, readOnly: true }
+        externalId: { type: string }
+        userName: { type: string, description: "Must be an email address (or give a primary email).", example: erin@yourbank.example }
+        displayName: { type: string }
+        name: { type: object, properties: { formatted: { type: string }, givenName: { type: string }, familyName: { type: string } } }
+        emails: { type: array, items: { type: object, properties: { value: { type: string }, type: { type: string }, primary: { type: boolean } } } }
+        active: { type: boolean, description: "false suspends the account and ends its sessions at once. String booleans (\"False\") are accepted." }
+        groups: { type: array, readOnly: true, items: { type: object, properties: { value: { type: string }, display: { type: string } } } }
+    Group:
+      type: object
+      properties:
+        schemas: { type: array, items: { type: string }, example: ["urn:ietf:params:scim:schemas:core:2.0:Group"] }
+        id: { type: string, readOnly: true }
+        displayName: { type: string, description: "Matched without regard to case; must be unique." }
+        externalId: { type: string }
+        members: { type: array, items: { type: object, properties: { value: { type: string, description: "A user's id." }, display: { type: string } } } }
+    PatchOp:
+      type: object
+      required: [Operations]
+      properties:
+        schemas: { type: array, items: { type: string }, example: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"] }
+        Operations:
+          type: array
+          items:
+            type: object
+            properties:
+              op: { type: string, enum: [add, replace, remove], description: "Case-insensitive." }
+              path: { type: string }
+              value: {}
+    ListResponse:
+      type: object
+      properties:
+        schemas: { type: array, items: { type: string } }
+        totalResults: { type: integer }
+        startIndex: { type: integer }
+        itemsPerPage: { type: integer }
+        Resources: { type: array, items: {} }
+  parameters:
+    filter: { name: filter, in: query, description: "Only `attribute eq \"value\"`.", schema: { type: string, example: "userName eq \"erin@yourbank.example\"" } }
+    startIndex: { name: startIndex, in: query, schema: { type: integer, default: 1 } }
+    count: { name: count, in: query, schema: { type: integer, default: 100, maximum: 200 } }
+paths:
+  /ServiceProviderConfig:
+    get: { tags: [Discovery], summary: "What's supported", responses: { "200": { description: "PATCH and filter supported; bulk, sort, ETag and password change not." } } }
+  /ResourceTypes:
+    get: { tags: [Discovery], summary: "Resource types", responses: { "200": { description: "User and Group." } } }
+  /Schemas:
+    get: { tags: [Discovery], summary: "Schemas", responses: { "200": { description: "The core User and Group schemas." } } }
+  /Users:
+    get:
+      tags: [Users]
+      summary: "List or find users"
+      description: "Filter on `userName`, `externalId` or `emails.value`. Removed users aren't listed."
+      parameters: [{ $ref: "#/components/parameters/filter" }, { $ref: "#/components/parameters/startIndex" }, { $ref: "#/components/parameters/count" }]
+      responses: { "200": { description: "A page of users.", content: { application/scim+json: { schema: { $ref: "#/components/schemas/ListResponse" } } } } }
+    post:
+      tags: [Users]
+      summary: "Create a user"
+      description: "Creates an account with no password and no roles until groups map to roles. If the email belongs to a user removed earlier, that account is restored."
+      requestBody: { required: true, content: { application/scim+json: { schema: { $ref: "#/components/schemas/User" }, example: { schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"], externalId: 0a1b2c3d, userName: erin@yourbank.example, active: true, name: { givenName: Erin, familyName: Sync } } } } }
+      responses:
+        "201": { description: "Created.", content: { application/scim+json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "409": { description: "`uniqueness`: a user with that userName exists." }
+  /Users/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Users], summary: "Read a user", responses: { "200": { description: "The user." }, "404": { description: "No such user." } } }
+    put: { tags: [Users], summary: "Replace a user", requestBody: { content: { application/scim+json: { schema: { $ref: "#/components/schemas/User" } } } }, responses: { "200": { description: "Updated." } } }
+    patch:
+      tags: [Users]
+      summary: "Update a user"
+      description: "Entra-style (`path: active`, `value: \"False\"`) and Okta-style (`value: {active: false}`) are both accepted. Deactivating the last admin is refused (`mutability`)."
+      requestBody: { content: { application/scim+json: { schema: { $ref: "#/components/schemas/PatchOp" }, example: { schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], Operations: [{ op: Replace, path: active, value: "False" }] } } } }
+      responses: { "200": { description: "Updated." }, "400": { description: "`mutability`: the last admin." } }
+    delete:
+      tags: [Users]
+      summary: "Remove a user"
+      description: "Kept for the audit trail with no roles; can never sign in. Removing the last admin is refused."
+      responses: { "204": { description: "Removed." } }
+  /Groups:
+    get:
+      tags: [Groups]
+      summary: "List or find groups"
+      description: "Filter on `displayName` (any case) or `externalId`. `excludedAttributes=members` leaves members out."
+      parameters: [{ $ref: "#/components/parameters/filter" }, { $ref: "#/components/parameters/startIndex" }, { $ref: "#/components/parameters/count" }, { name: excludedAttributes, in: query, schema: { type: string } }]
+      responses: { "200": { description: "A page of groups." } }
+    post:
+      tags: [Groups]
+      summary: "Create a group"
+      description: "Members' roles are recalculated from groups and roles."
+      requestBody: { required: true, content: { application/scim+json: { schema: { $ref: "#/components/schemas/Group" } } } }
+      responses: { "201": { description: "Created." }, "409": { description: "`uniqueness`." } }
+  /Groups/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Groups], summary: "Read a group", responses: { "200": { description: "The group." } } }
+    put: { tags: [Groups], summary: "Replace a group", description: "Replaces its name and members.", requestBody: { content: { application/scim+json: { schema: { $ref: "#/components/schemas/Group" } } } }, responses: { "200": { description: "Updated." } } }
+    patch:
+      tags: [Groups]
+      summary: "Update a group"
+      description: |
+        - `{"op": "add", "path": "members", "value": [{"value": "<id>"}]}`
+        - `{"op": "remove", "path": "members", "value": [...]}` or `{"op": "remove", "path": "members[value eq \"<id>\"]"}`
+        - `{"op": "replace", "path": "members", "value": [...]}`
+        - `{"op": "replace", "value": {"displayName": "…"}}`
+      requestBody: { content: { application/scim+json: { schema: { $ref: "#/components/schemas/PatchOp" } } } }
+      responses: { "200": { description: "Updated." }, "400": { description: "`invalidValue`: a member isn't a user here." } }
+    delete: { tags: [Groups], summary: "Delete a group", description: "Members' roles are recalculated.", responses: { "204": { description: "Deleted." } } }

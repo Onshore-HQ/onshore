@@ -1,0 +1,90 @@
+---
+title: Control API
+description: Configure Onshore from code. Copy setup between installs, your own data types, publish requests, country packs and webhooks.
+---
+
+import { Callout } from "nextra/components";
+
+# Control API
+
+The console is built on the control API, under `https://<host>/control/v1/`. It manages configuration, never stored values. Most automation needs only the endpoints below.
+
+## Authentication
+
+- **Setup keys** (from **Settings → Copy setup → Keys for pipelines**) start `onsk_`, are scoped to what you chose, expire, and act as the admin who made them. Use them in CI.
+- People's sessions also work, with their roles.
+
+```sh
+curl -H "Authorization: Bearer $ONSHORE_KEY" https://vault.yourbank.example/control/v1/…
+```
+
+## Copy setup
+
+```sh
+# Export a vault's setup
+curl -H "Authorization: Bearer $ONSHORE_KEY" \
+  "https://<host>/control/v1/config/export?vault_id=<vault>" -o setup.json
+
+# See what would change on another install, then apply with "dry_run": false
+curl -H "Authorization: Bearer $ONSHORE_KEY" -H "content-type: application/json" \
+  -d "{\"vault_id\":\"<vault>\",\"dry_run\":true,\"config\":$(cat setup.json)}" \
+  "https://<host>/control/v1/config/import"
+```
+
+The file holds fields, data types, access rules, approved networks and connections; never keys, secrets, people or customer data. Imports never delete, never weaken a live connection, and bring access rules and data types in as drafts.
+
+## Your own data types
+
+| Call | Does |
+| --- | --- |
+| `POST /v1/vaults/{vault}/custom-entities` | Create a draft. Body: `name`, `slug` (`c_…`), `kind`, `definition`, `validator`, `context_positive`, `context_negative`, `threshold`, `token_kind`, `token_format`, `mask_rule`, `actions`, `tests` |
+| `PATCH /v1/vaults/{vault}/custom-entities/{id}` | Edit a draft, or stage an edit beside the live version |
+| `POST /v1/vaults/{vault}/custom-entities/{id}/publish-requests` | Run samples and the benchmark, and ask to publish |
+| `POST /v1/publish-requests/{id}/approve` | Approve, as a second person |
+| `POST /v1/vaults/{vault}/custom-entities/{id}/status` | `{"status": "enforcing" \| "shadow" \| "archived"}` |
+| `POST /v1/vaults/{vault}/custom-entities/{id}/values` | Upload a value list (multipart CSV) |
+| `POST /v1/custom-entities/check` | Check a definition compiles, storing nothing |
+
+A worked example:
+
+```json
+POST /control/v1/vaults/v_live_gb01/custom-entities
+{
+  "name": "Loan ID", "slug": "c_loan_id", "kind": "pattern",
+  "definition": { "regex": "LN-\\d{8}" },
+  "validator": { "type": "length", "value": 11 },
+  "context_positive": ["loan", "facility", "repayment"],
+  "context_negative": ["invoice"],
+  "actions": { "api": "tokenize", "logs": "tokenize", "ai": "tokenize", "proxy": "mask" },
+  "tests": [
+    { "sample": "repayment on LN-00412873 is late", "expect_match": true },
+    { "sample": "facility LN-11112222 approved", "expect_match": true },
+    { "sample": "see LN-33334444", "expect_match": true },
+    { "sample": "invoice INV-00412873 paid", "expect_match": false },
+    { "sample": "LN-123", "expect_match": false },
+    { "sample": "plain words", "expect_match": false }
+  ]
+}
+```
+
+Once protecting, `repayment on LN-00412873 is late` leaves as `repayment on tok_c_loan_id_… is late`.
+
+## Country packs
+
+| Call | Does |
+| --- | --- |
+| `GET /v1/packs`, `POST /v1/packs` | List, or create with `country`, `name`, `description` |
+| `GET /v1/packs/{id}`, `PUT /v1/packs/{id}` | Read, or save `name`, `description`, `data_types` (custom data type definitions with `tests`) and `laws` (`name`, `effect`, `source`, `checked_on`) |
+| `POST /v1/packs/{id}/test` | Run every data type's samples without a vault |
+| `POST /v1/packs/{id}/apply` | `{"vault": "…"}`: create or update the types in a vault, and ask to publish each |
+| `GET /v1/packs/{id}/export` | A signed pack file |
+| `POST /v1/packs/import` | `{"file": {…}, "preview": true}` to preview, then without `preview` to import |
+| `DELETE /v1/packs/{id}` | Archive |
+
+## Webhooks
+
+`POST /v1/webhooks` with a URL and event types; the secret is returned once. See [Webhooks](/developers/webhooks/).
+
+<Callout type="info">
+The control API is still evolving and has no published OpenAPI file yet. Endpoints on this page are the ones intended for automation.
+</Callout>

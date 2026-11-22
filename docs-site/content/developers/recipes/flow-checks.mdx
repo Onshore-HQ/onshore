@@ -1,0 +1,73 @@
+---
+title: Check data leaving the country
+description: Make a job that copies data abroad report what each batch holds, show it on the residency map, and stop a batch that isn't clean.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Check data leaving the country
+
+Some data leaves through paths Onshore can't sit in: a nightly export to a warehouse abroad, a file sent to a partner over SFTP, a sync job to a CRM. A **flow check** lets that job report what each batch holds. The vault counts identifiers (sent unprotected) and tokens (protected), keeps **only the counts**, and shows them on the [residency map](/guides/residency-map/).
+
+<Steps>
+
+### Add the flow on the map
+
+On the **Residency map**, add the flow: where it goes (host or service), why, and what it should carry. Copy its **flow ID** (`flow_…`).
+
+### Check each batch before it leaves
+
+```ts
+async function exportBatch(rows: Customer[]) {
+  // A sample is enough; the whole batch works too (up to 1 MiB per call)
+  const sample = rows.slice(0, 1000).map((r) => JSON.stringify(r)).join("\n");
+  const report = await vault.checkFlow(VAULT, "flow_nightly_bq", sample);
+  // { identifiers: 0, tokens: 2400, clean: true, by_type: {} }
+
+  if (!report.clean) {
+    alerting.page(`Nightly export blocked: ${JSON.stringify(report.by_type)}`); // e.g. { uk_nino: 3, email: 41 }
+    throw new Error("batch holds unprotected identifiers");
+  }
+  await bigquery.insert(rows);
+}
+```
+
+### Watch it on the map
+
+The first check puts the flow on the map. From then on, the map shows protected and unprotected counts per day, and the flow turns red when identifiers were seen.
+
+</Steps>
+
+## What's counted
+
+- **Identifiers**: anything detection finds, using the vault's country packs and your own data types.
+- **Tokens**: anything shaped like a token from this install (`tok_<type>_<8+ characters>`).
+- `clean` is `true` when no identifiers were found.
+
+The text itself is never stored or logged.
+
+## Block or warn?
+
+| Approach | When |
+| --- | --- |
+| **Block** (throw when not clean) | Exports where a leak would breach a law or contract |
+| **Warn** (alert, then send anyway) | While you're finding out what a flow carries. Switch to blocking once it's been clean for a while |
+| **Report only** | Flows you can't stop but must account for |
+
+## Choosing a sample
+
+Checking every row is the safest. For large batches, sample from the whole batch rather than the first rows, and include free-text columns (notes, descriptions, addresses), because that's where identifiers hide.
+
+```python
+import random, json
+sample = "\n".join(json.dumps(r) for r in random.sample(rows, min(1000, len(rows))))
+report = vault.check_flow(VAULT, "flow_partner_sftp", sample)
+```
+
+<Callout>
+A flow check proves what a sample held, not the whole batch. For a guarantee, tokenize the columns at the source so the export can only ever hold tokens; see [Store values at the source](/developers/recipes/store-values/).
+</Callout>
+
+## API
+
+`POST /v1/vaults/{vault}/flows/{flow}/check` with `{ "text": "…" }`. No access rule action is needed beyond being a service account of the tenant. Unknown flow: `404 invalid_request`. Text over 1 MiB: `400 invalid_request`.

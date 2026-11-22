@@ -1,0 +1,60 @@
+# High-availability reference for banks. PostgreSQL and the key service are external
+# on purpose: run them with a primary and replica, and a 3-node OpenBao or an HSM.
+image:
+  registry: registry.example.ng/rv
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+host: vault.example.ng
+ingress:
+  className: nginx
+  # A TLS secret for the public host name.
+  tlsSecret: onshore-public-tls
+  # The namespace label of your ingress controller, for the network policies.
+  controllerNamespace: ingress-nginx
+
+# Existing Secret holding: RV_INTERNAL_TOKEN, RV_TOKEN_SIGNING_SEED, RV_USER_TOKEN_SEED,
+# RV_USER_TOKEN_PUBLIC_KEY, RV_CONTROL_SECRET, RV_BOOTSTRAP_TOKEN, OPENBAO_TOKEN,
+# RV_VAULT_DATABASE_URL, RV_CONTROL_DATABASE_URL, RV_MIGRATE_DATABASE_URL,
+# RV_VAULT_DB_PASSWORD, RV_CONTROL_DB_PASSWORD, RV_LICENCE
+existingSecret: onshore-secrets
+
+# One Secret per service with ca.pem, cert.pem and key.pem, named <prefix>-<service>.
+# Each certificate's DNS name must be the service name; cert-manager can issue these.
+internalTlsSecretPrefix: onshore-tls
+
+keyService:
+  backend: openbao
+  address: https://openbao.vault.svc:8200
+  # Namespace and port the network policy opens for vault-api.
+  namespace: vault
+  port: 8200
+database:
+  # CIDR of your external PostgreSQL, for the network policies.
+  cidr: 10.0.0.0/8
+  port: 5432
+  caPath: /tls/ca.pem
+# Where gateways may send traffic. 0.0.0.0/0 with private ranges excepted suits a
+# public SaaS destination. The services also refuse private addresses themselves.
+egress:
+  cidr: 0.0.0.0/0
+  except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+# Pod CIDR of the proxies in front of vault-api, trusted for X-Forwarded-For.
+trustedProxies: 10.0.0.0/8
+
+replicas:
+  vaultApi: 3
+  controlApi: 2
+  console: 2
+  logProcessor: 2
+  aiGateway: 2
+  httpProxy: 2
+
+modules:
+  logs: true
+  ai: true
+  proxy: true
+
+resources:
+  vaultApi: { requests: { cpu: "1", memory: 1Gi }, limits: { memory: 2Gi } }
+  default: { requests: { cpu: 250m, memory: 256Mi }, limits: { memory: 1Gi } }

@@ -1,0 +1,67 @@
+---
+title: Page protection
+description: Keep a list of the scripts that run on your checkout and sign-up pages, and find out when a script appears or changes.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Page protection
+
+A checkout or KYC page can be emptied by one compromised third-party script. **Page protection** keeps a list of what runs on your sensitive pages, and tells you when that list, or a script's contents, changes. It supports the script inventory and change detection that card-payment rules ask about.
+
+<Shot src="/screenshots/page-protection.png" alt="Page protection, with Protect a page and the list of protected pages" />
+
+<Callout type="warning">
+This hasn't been assessed against any card-industry standard, and using it doesn't make a page compliant.
+</Callout>
+
+## Protect a page
+
+<Steps>
+
+### Add the page
+
+Select **Protect a page** and enter its address.
+
+### Report only
+
+Send the header shown under **1. Report only** on that page. Browsers report every script, and **nothing is blocked**.
+
+### Add the watcher (optional)
+
+Add the snippet under **2. Watcher** to catch scripts added after the page loads.
+
+### Decide on each script
+
+Browse the page. Scripts appear as **need a decision**. Approve or reject each one with a **reason**. Approving records the file's fingerprint (SHA-256).
+
+### Enforce
+
+When the list is right, use the header under **3. Enforce**. **It blocks anything not approved**, so try it on a staging page first. Your own inline code needs a nonce.
+
+</Steps>
+
+Select **Scan now** to fetch the page from the server immediately. Scans also run every 15 minutes.
+
+## Three ways scripts are seen
+
+| Signal | Sees | Weakness |
+| --- | --- | --- |
+| **Browser report** (the header) | Everything the browser loads, including inline code | You must set a header; some extensions block reports |
+| **Watcher** script | Scripts added while the page runs | A hostile script on the same page could interfere |
+| **Server scan** | Script tags in the page's HTML, and each approved file's fingerprint | Only what an unauthenticated request gets; misses pages behind a login |
+
+## Alerts
+
+| Alert | When |
+| --- | --- |
+| New script | A script not seen before on this page |
+| Script changed | An approved file's contents changed. It loses its approval until someone looks again |
+| Rejected script seen | A rejected script ran again, at most hourly |
+| Report flood | More than 50 new scripts in an hour, or 500 on a page |
+
+Each also sends a [webhook](/developers/webhooks/) event.
+
+## What is stored
+
+Script addresses only. Query strings and fragments are dropped, and a path segment holding ten or more digits or an `@` becomes `[removed]`. The watcher reads script addresses and nothing else: no form fields, cookies or page text.

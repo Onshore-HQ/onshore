@@ -1,0 +1,18 @@
+# End-to-end test overrides only: a plain-HTTP mock destination on the host.
+x-mock: &mock
+  environment:
+    RV_ALLOW_HTTP_UPSTREAM: "true"
+    RV_ALLOW_PRIVATE_UPSTREAM: "true"
+  extra_hosts: ["host.docker.internal:host-gateway"]
+services:
+  log-processor: *mock
+  ai-gateway: *mock
+  http-proxy: *mock
+  adapters: *mock
+  control-api:
+    environment:
+      RV_MONITOR_INTERVAL_MS: "3000"
+      RV_MAP_INTERVAL_MS: "2000"
+      RV_MAIL_ALERT_INTERVAL_MS: "2000"
+      RV_ALLOW_HTTP_UPSTREAM: "${RV_E2E_ALLOW_UPSTREAM:-true}"
+      RV_ALLOW_PRIVATE_UPSTREAM: "${RV_E2E_ALLOW_UPSTREAM:-true}"

@@ -1,0 +1,17 @@
+:root { --rv-color: #171714; --rv-muted: #6f6d64; --rv-background: transparent; --rv-input-background: #ffffff; --rv-border: #cfcdc4; --rv-accent: #0f5c46; --rv-error: #a9281f; --rv-radius: 6px; --rv-font-size: 14px; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--rv-background); color: var(--rv-color); font: var(--rv-font-size)/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+body.font-serif { font-family: Georgia, "Times New Roman", serif; }
+body.font-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+#root { display: grid; gap: 10px; padding: 2px; }
+label { display: grid; gap: 4px; font-weight: 550; font-size: 0.93em; }
+input { font: inherit; font-weight: 400; padding: 7px 9px; color: var(--rv-color); background: var(--rv-input-background); border: 1px solid var(--rv-border); border-radius: var(--rv-radius); width: 100%; }
+input:focus-visible { outline: 2px solid var(--rv-accent); outline-offset: 1px; }
+input[aria-invalid="true"] { border-color: var(--rv-error); }
+.problem { color: var(--rv-error); font-weight: 400; font-size: 0.9em; }
+.value { display: grid; gap: 2px; }
+.value b { font-weight: 550; font-size: 0.9em; color: var(--rv-muted); }
+.value span { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; user-select: none; }
+.note { color: var(--rv-muted); font-size: 0.9em; }
+.error { color: var(--rv-error); }
+.badge { justify-self: start; font-size: 0.8em; color: var(--rv-muted); }

@@ -1,0 +1,63 @@
+---
+title: SCIM provisioning
+description: Your identity provider adds, updates and removes people in Onshore, so access ends the moment someone leaves.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# SCIM provisioning <Ent />
+
+With **SCIM 2.0**, your identity provider adds people to Onshore, keeps their names and emails up to date, pushes groups, and **removes people when they leave**: their access ends immediately. It works with Entra ID, Okta, OneLogin, JumpCloud, authentik and any SCIM 2.0 client.
+
+SCIM usually goes with [single sign-on](/identity/single-sign-on/): SCIM manages accounts, single sign-on lets people in.
+
+## Set it up
+
+<Steps>
+
+### Make a token
+
+In **Settings → Sign-in → Directory sync (SCIM)**, select **Make a SCIM token** and name it after the provider it's for. Copy the **SCIM URL** and **token**: the token is shown once. You can have five active tokens.
+
+The SCIM URL looks like `https://vault.yourbank.example/control/scim/v2`.
+
+### Give them to your provider
+
+Paste the URL and token into your provider's provisioning settings, as a bearer token. See [Provider guides](/identity/providers/).
+
+### Map groups
+
+Map the groups your provider pushes to roles in [Groups and roles](/identity/groups-and-roles/).
+
+### Start provisioning
+
+Turn provisioning on at your provider, ideally for a test group first.
+
+</Steps>
+
+The card shows how many people are synced, and each token's last use.
+
+## What your provider can do
+
+| Action | Effect in Onshore |
+| --- | --- |
+| Create a user | An account is created, marked "synced by SCIM". It has no password: the person signs in with single sign-on |
+| Update a user | Name, email and external ID are updated |
+| Deactivate a user (`active: false`) | The account is suspended and **every session ends at once** |
+| Reactivate | The account is active again |
+| Delete a user | The account is **removed**: kept for the audit trail, with no roles, and can never sign in. Pushing the same person again restores the same account |
+| Create, update or delete a group | Members' roles are recalculated from the mapped groups |
+
+Lookups by `userName`, `externalId` or email, and by group `displayName`, are supported, as are the PATCH styles Entra ID and Okta send (including Entra's `"False"` as a string). Every change is in the audit log.
+
+<Callout type="warning">
+SCIM **can't deactivate or delete your last admin**: the request is refused with a message your provider shows.
+</Callout>
+
+## Revoking a token
+
+Select **Revoke** next to a token. Your provider stops syncing until you give it a new one. People already synced keep their access.
+
+## Tested with
+
+29 checks using requests shaped like Entra ID's and Okta's. No live Entra or Okta tenant has pushed to it yet. Technical reference: [SCIM API](/developers/scim/).

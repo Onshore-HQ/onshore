@@ -1,0 +1,138 @@
+---
+title: Retries and errors
+description: Every error code the data API returns, what each means, which are retried, what's safe to retry yourself, and how to stay idempotent.
+---
+
+import { Callout } from "nextra/components";
+
+# Retries and errors
+
+## The error shape
+
+Every error from the data API has the same body:
+
+```json
+{
+  "error": { "code": "policy_denied", "message": "no rule allows detokenize on national_id", "policy": "support-agents" },
+  "request_id": "req_01HV3K8Z"
+}
+```
+
+- **Branch on `code`**, never on `message`; messages can change.
+- **Messages never contain a stored value**, so errors are safe to log.
+- **`request_id`** finds the call in the audit log and is what support asks for.
+- **`policy`** names the access rule that decided, on refusals.
+
+The SDKs turn this into one error type: `VaultError` (Node, Python, PHP), `*vault.Error` (Go), `VaultException` (Java).
+
+## Every code
+
+| Status | Code | Meaning | SDK retries | What you do |
+| --- | --- | --- | --- | --- |
+| 0 | `network_error` | No answer: DNS, TLS, connection refused or reset, timeout | Yes | After retries, fail closed and report |
+| 400 | `invalid_request` | Malformed body, missing or too-long purpose, unknown field, over 500 items, a check that doesn't suit the field, unknown option | No | Fix the code |
+| 401 | `unauthenticated` | Bad signature, unknown or revoked key, expired assertion, reused `jti`, disabled account, clock skew | No (the next call signs again) | Check the key and the server's clock |
+| 403 | `policy_denied` | No access rule allows this; or the IP isn't on the key's allowlist | No | Change access rules, or don't do it |
+| 404 | `token_not_found` | Token unknown, erased or expired; lookup found no match | No | Treat as "no such value" |
+| 404 | `invalid_request` | Unknown vault, record, person or flow | No | Check the ID |
+| 404 | `not_found` | Digital twin unknown or expired | No | Cloak again |
+| 409 | `duplicate_value` | The value already exists in a field marked unique | No | It's already stored; look it up |
+| 413 | `too_large` | Cloak or uncloak text over 256 KB | No | Split the text |
+| 422 | `validation_failed` | Value fails its field's format or check digit | No | Ask the person to correct it |
+| 429 | `rate_limited` | A reveal limit, the lookup and check limit (60 a minute per caller), or a request limit | Yes | Slow down; back off longer |
+| 500 | `internal` | A bug | Yes | Report with `request_id` |
+| 503 | `key_service_unavailable` | The key service is sealed or unreachable. Nothing was stored or decrypted | Yes | Wait; alert your operators |
+| 503 | `detection_not_ready` | Detection rules still loading after a restart | Yes | Wait a few seconds |
+
+Secure components add `invalid_client_token` (unknown, expired, used or wrong origin), `forbidden` and `origin_not_allowed` (origin not listed).
+
+## What the SDKs retry
+
+Network failures, timeouts, 429 and 5xx are retried with exponential backoff and jitter (about 100–200 ms doubling to 2 s), 4 attempts in total by default. Everything else is returned at once. Change the number with `maxAttempts` (`max_attempts` in Python, `MaxAttempts` in Go). Go also stops waiting when its `context` is cancelled.
+
+## Is it safe to retry?
+
+A request can succeed in the vault but its response be lost (a timeout, a dropped connection). Whether retrying is safe then depends on the call:
+
+| Call | Safe to retry? | Why |
+| --- | --- | --- |
+| `tokenize` on a **deterministic** field | Yes | Same value, same token: a retry returns the existing token with `existing: true` |
+| `tokenize` on a **cell** field | Mostly | A retry stores the value again under a new token. The first token is orphaned: harmless, but it's an extra copy. Avoid by making the field unique, or tokenizing deterministic fields where duplicates matter |
+| `tokenize` on a **unique** cell field | Retry returns `409 duplicate_value` | The first attempt stored it. Use `lookup` to get its token |
+| `insertRecord` | Like `tokenize` for its fields | |
+| `detokenize`, `getRecord`, `exportSubject` | Yes | Reads. Each attempt is audited, so a retry shows as two reveals |
+| `lookup`, `residentCheck`, `detect` (without tokenize) | Yes | Reads, but each counts against rate limits |
+| `updateValue` | Yes | Setting the same value twice is the same as once |
+| `restrictSubject` | Yes | Sets a state |
+| `eraseSubject` | Yes | If the first attempt went through, the retry gets `404 invalid_request` (the person is gone): treat that as done |
+| `createClientToken` | Yes | An unused client token simply expires |
+| `cloak` with `keepDays` | Yes | A retry may leave an extra twin, which expires |
+
+## Patterns
+
+### Fail closed on reveals
+
+```ts
+async function safeReveal(token: string, purpose: string): Promise<string | null> {
+  try {
+    const [r] = await vault.detokenize(VAULT, [token], purpose);
+    return r.decision === "plaintext" || r.decision === "masked" ? r.value! : null;
+  } catch (e) {
+    log.warn("reveal failed", { code: (e as VaultError).code, requestId: (e as VaultError).requestId });
+    return null;   // show "unavailable", never the token or a cached copy
+  }
+}
+```
+
+### Don't fail open on stores
+
+If `tokenize` fails, don't save the raw value "for now". Return an error to the caller, or queue the work with the value held only in memory or an encrypted queue, and retry.
+
+### Back off on 429 for jobs
+
+The SDKs' few quick retries suit interactive calls. A batch job hitting reveal limits should pause longer:
+
+```ts
+for (const batch of batches) {
+  for (let wait = 5_000; ; wait = Math.min(wait * 2, 300_000)) {
+    try { await process(batch); break; }
+    catch (e) {
+      if (e instanceof VaultError && e.code === "rate_limited") { await sleep(wait); continue; }
+      throw e;
+    }
+  }
+}
+```
+
+### Treat 401 as a configuration problem
+
+A 401 after working calls usually means the key was revoked or rotated, or the server's clock has drifted (assertions are rejected if their times are off by more than a few minutes). Check NTP, then the key. The SDK signs a fresh assertion on the next call, so a one-off 401 during a rotation fixes itself.
+
+### Map errors for your own API
+
+| Vault code | Your API returns |
+| --- | --- |
+| `validation_failed` | 422, "check this value" |
+| `duplicate_value` | 409 |
+| `token_not_found` | 404 or 410 |
+| `policy_denied` | 403 |
+| `rate_limited` | 429 with `Retry-After` |
+| `key_service_unavailable`, `network_error`, `internal` | 503 |
+
+Never pass the vault's message straight to end users; write your own.
+
+## Limits at a glance
+
+| Limit | Value |
+| --- | --- |
+| Items per tokenize or detokenize request | 500 (the SDKs batch for you) |
+| Purpose | 500 characters |
+| `detect` and flow check text | 1 MiB |
+| `cloak` and `uncloak` text | 256 KB |
+| Lookups and resident checks | 60 a minute per caller |
+| Client token lifetime | 120 s default, 600 s maximum |
+| Client token scope | 10 fields (collect), 20 tokens (reveal) |
+| Bearer token lifetime | 15 minutes |
+| Assertion lifetime | 5 minutes at most; each `jti` once |
+| Digital twin | 1 to 365 days |
+| Authentication failures | 120 a minute per address by default |

@@ -1,0 +1,100 @@
+---
+title: Decide without moving data
+description: Use resident checks so a service in another country can decide on age, name or amount without the value leaving its country.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Decide without moving data
+
+Data residency laws often say a value must stay in its country. But a service elsewhere (a credit engine in Ireland, a fraud model in the US, a card processor in Singapore) still needs to make decisions with it. A **resident check** runs the comparison inside the vault, in the value's country, and returns only `true` or `false`.
+
+```
+Credit engine (abroad) ──"is tok_date_k2Fq at least 18?"──▶ Vault (in the country)
+                       ◀────────────── true ──────────────   (date of birth never leaves)
+```
+
+## The checks
+
+| `check` | Field must hold | `arg` | `true` when |
+| --- | --- | --- | --- |
+| `equals` | Any data type | A value | It equals the stored value, after the field's normalising (spacing, case, separators) |
+| `name_match` | `person_name` | A name | The same name parts in any order: `Adeyemi Samuel` matches `Samuel Adeyemi`, `SAMUEL  ADEYEMI` matches too |
+| `age_at_least` | `date` | Whole years, `"0"` to `"150"` | The stored date of birth makes the person at least that old today (UTC) |
+| `amount_at_least` | `amount` | A number | The stored amount is at least that |
+
+A check on the wrong kind of field fails with `invalid_request`, such as `name_match needs a person_name field`.
+
+### Amounts
+
+`amount_at_least` reads amounts as people write them. Currency symbols and codes are ignored, and both separator styles work:
+
+| Stored | Read as |
+| --- | --- |
+| `£1,250.50`, `$1,250.50`, `AED 1,250.50` | 1250.5 |
+| `1.250,50 €`, `R$ 1.250,50` | 1250.5 |
+| `1 250,50` | 1250.5 |
+| `₦850,000` | 850000 |
+| `12,5` | 12.5 (one comma followed by one or two digits is a decimal mark) |
+| `1.250` | 1250 (one dot followed by exactly three digits is a thousands separator) |
+
+The comparison ignores currency entirely, so compare amounts in the same currency.
+
+### Dates
+
+Stored dates are read in these formats: `1988-03-14`, `14/03/1988`, `14-03-1988`, `14 March 1988`, `14 Mar 1988`. Day comes before month in the slash and dash forms. Store dates as `YYYY-MM-DD` to avoid any doubt.
+
+## Examples
+
+<Tabs items={["Node.js", "Python", "Go", "Java"]}>
+<Tabs.Tab>
+```ts
+// Age gate for a card product
+const adult = await vault.residentCheck(VAULT, customer.dob_token, "age_at_least", "18", `Card application ${appId}`);
+
+// Does the beneficiary name on an incoming payment match the account holder?
+const sameName = await vault.residentCheck(VAULT, account.name_token, "name_match", payment.beneficiaryName, `Payment ${payment.id}`);
+
+// Is declared income at least the product threshold?
+const eligible = await vault.residentCheck(VAULT, applicant.income_token, "amount_at_least", "30000", `Loan ${loanId}`);
+
+// Does the ID number the caller just read out match what's on file?
+const verified = await vault.residentCheck(VAULT, customer.national_id_token, "equals", spokenId, `Call ${callId}`);
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+adult = vault.resident_check(VAULT, c.dob_token, "age_at_least", "18", f"Card application {app_id}")
+same_name = vault.resident_check(VAULT, acct.name_token, "name_match", payment.beneficiary_name, f"Payment {payment.id}")
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+adult, err := client.ResidentCheck(ctx, vaultID, c.DOBTok, "age_at_least", "18", "Card application "+appID)
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```java
+boolean adult = vault.residentCheck(VAULT, c.dobToken(), "age_at_least", "18", "Card application " + appId);
+```
+</Tabs.Tab>
+</Tabs>
+
+## Access and limits
+
+- Checks need the **`compare`** action in an access rule. It's separate from `detokenize`: a service can be allowed to ask questions about a value while never being allowed to see it.
+- Every check is audited with its purpose, like a reveal.
+- Checks share the lookup limit: **60 a minute per caller**.
+
+<Callout type="warning">
+A yes-or-no answer still leaks a little. Enough `equals` checks can confirm a guess, and repeated `amount_at_least` checks can binary-search an amount. That's why checks have their own action, a rate limit and an audit trail. Give `compare` only to services that need it, and look for unusual volumes in the audit log.
+</Callout>
+
+## Comparing directly
+
+`POST /v1/resident/compare` is shorthand for an `equals` check that names the vault in the body: `{ "vault", "token", "value", "purpose" }`. It returns `{ "result": true }`.
+
+## Next
+
+- [Cloak text for AI](/developers/recipes/cloak-for-ai/)
+- [Access rules](/guides/access-rules/)

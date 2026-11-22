@@ -1,0 +1,112 @@
+---
+title: Protect free text
+description: Find identifiers in support messages, notes, documents and JSON, and replace them with tokens before the text is stored.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Protect free text
+
+People put identifiers where you don't expect them: an IBAN in a chat message, an ID number in a note, a date of birth in an uploaded form. `detect` finds them in free text or JSON, and with `tokenize` it stores each one and gives you the text back with tokens in place.
+
+## What it finds
+
+With a `vault`, detection uses that vault's country packs (for example the UK pack's National Insurance and NHS numbers, sort codes and IBANs) plus your own data types. Without one, every built-in pack runs. Each match has a confidence score; matches are kept above the data type's threshold (0.7 by default), and **check digits are verified** where the format has them (IBAN mod 97, NHS mod 11, Luhn for cards and South African IDs, Verhoeff for Aadhaar), so a random 10-digit number doesn't become an NHS number.
+
+Card numbers are found but **always masked, never stored**: Onshore keeps cards out of the vault so you stay out of PCI DSS scope.
+
+## Find only
+
+```ts
+const msg = "Hi, refund to GB82 WEST 1234 5698 7654 32 please. My NI number is AB 12 34 56 C.";
+const { entities, ruleset_version } = await vault.detect(msg, { vault: VAULT });
+// [{ type: "iban", start: 14, end: 41, score: 0.99, custom: false },
+//  { type: "uk_nino", start: 66, end: 79, score: 0.97, custom: false }]
+```
+
+Use this to flag or route messages ("contains an ID number"), or to block a form field that shouldn't contain identifiers.
+
+`start` and `end` are **byte** offsets in the UTF-8 text:
+
+<Tabs items={["Node.js", "Python", "Go", "Java"]}>
+<Tabs.Tab>
+```ts
+const bytes = Buffer.from(msg);
+const found = entities.map((e) => bytes.subarray(e.start, e.end).toString());
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+raw = msg.encode()
+found = [raw[e["start"]:e["end"]].decode() for e in entities]
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+found := msg[e.Start:e.End] // Go strings are bytes
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```java
+byte[] raw = msg.getBytes(StandardCharsets.UTF_8);
+String found = new String(Arrays.copyOfRange(raw, e.start(), e.end()), StandardCharsets.UTF_8);
+```
+</Tabs.Tab>
+</Tabs>
+
+## Find and tokenize
+
+```ts
+const { text } = await vault.detect(msg, { vault: VAULT, tokenize: true });
+// "Hi, refund to tok_iban_Qa81LmZ3Xe0d please. My NI number is tok_uk_nino_7Hq2xP9LmA4c."
+await helpdesk.saveMessage(ticketId, text);
+```
+
+Each match whose data type has a field in the vault is stored there and replaced by its token. A match with no field is **masked** instead (per the data type's mask). For tokenizing, the service account needs the `tokenize` action.
+
+To reveal later, the tokens in the text are normal tokens: pull them out with a regular expression (`/\btok_[a-z][a-z0-9_]*?_[A-Za-z0-9]{8,}\b/g`, the same pattern the vault uses) and `detokenize` them.
+
+## Limit what's looked for
+
+```ts
+await vault.detect(text, { vault: VAULT, entities: ["uk_nino", "iban", "c_loan_id"] });
+```
+
+Names are built-in data types or your own (`c_…`). Useful when a field should only ever contain one kind of identifier, and it's faster.
+
+## A helpdesk webhook
+
+```ts
+app.post("/hooks/helpdesk", express.json({ limit: "2mb" }), async (req, res) => {
+  const { ticket_id, body } = req.body;
+  try {
+    const { text, entities } = await vault.detect(body, { vault: VAULT, tokenize: true });
+    await helpdesk.updateMessage(ticket_id, text);
+    if (entities.length) await helpdesk.tag(ticket_id, "had-identifiers");
+  } catch (e) {
+    // Fail closed: hide the message rather than keep it unprotected
+    await helpdesk.updateMessage(ticket_id, "[message hidden: couldn't be checked; open it in the secure view]");
+    throw e;
+  }
+  res.sendStatus(204);
+});
+```
+
+## Your own data types
+
+If your identifiers have their own shape (loan IDs, policy numbers, member numbers), define them in the console on the **Data types** page, in the **Your own** tab: a pattern, keywords, a check rule and test samples. Once published and switched to protecting, `detect` finds them like built-in types. New ones start in **watch only**: pass `includeShadow: true` to see their matches (marked `shadow: true`) without them being tokenized, while you check they don't over-match. See [Data types](/guides/data-types/).
+
+## Limits
+
+- Text up to 1 MiB per call. Split larger documents.
+- After a restart, the first calls can fail with `503 detection_not_ready` for a few seconds while rules load; the SDKs retry it.
+- `ruleset_version` tells you which version of the rules ran, so you can re-scan old text after rules change.
+
+<Callout>
+For logs, use the [log pipeline](/developers/log-pipelines/) integration instead of calling `detect` per line. For files (PDFs, images, spreadsheets), use [file redaction](/guides/redact-a-file/).
+</Callout>
+
+## Next
+
+- [Cloak text for AI](/developers/recipes/cloak-for-ai/)
+- [Data types](/guides/data-types/)

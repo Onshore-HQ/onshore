@@ -1,0 +1,9 @@
+**/node_modules
+**/.next
+**/dist
+**/.env
+**/*.tar
+**/*.tar.gz
+deploy/compose/.env
+deploy/compose/bundle
+Onshore*.md

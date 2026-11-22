@@ -1,0 +1,181 @@
+---
+title: Collect and reveal in the front end
+description: End to end, server and client - collect an ID number in a web or mobile form without it reaching your servers, and show a value to an agent without it passing through your API.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Collect and reveal in the front end
+
+Secure components keep values out of your front end and your servers altogether. A form or a revealed value sits in a component the vault controls; your code handles only tokens.
+
+```
+Browser / app          Your server                         Vault
+     │  1. "I want to add my ID"  │                               │
+     │ ─────────────────────────▶ │  2. createClientToken ──────▶ │
+     │ ◀──── client token ─────── │ ◀──────── rvct_… ──────────── │
+     │  3. mount the form with the token, person types            │
+     │ ──────────────────── value goes straight to the vault ───▶ │
+     │ ◀─────────────────────────── tokens ────────────────────── │
+     │  4. send tokens ─────────▶ │  5. save tokens              │
+```
+
+## One-time setup
+
+1. **List your origins.** In **Vaults → your vault → Secure components**, add each website (`https://app.yourbank.example`) and each app (`rvapp://com.yourbank.wallet`).
+2. **A service account for minting.** Give it an access rule allowing `tokenize` on the fields you collect, and `detokenize` (with the decision you want people to see) on the fields you reveal.
+3. **Content Security Policy** on your web pages: `script-src https://vault.yourbank.example; frame-src https://vault.yourbank.example`.
+
+## Collect an ID number
+
+<Steps>
+
+### Server: an endpoint that mints a collect token
+
+<Tabs items={["Node.js", "Python", "Go"]}>
+<Tabs.Tab>
+```ts
+app.post("/api/secure/collect-id", requireUser, async (req, res) => {
+  const { client_token, expires_at } = await vault.createClientToken(VAULT, {
+    kind: "collect",
+    origin: req.get("x-app-origin") === "ios" ? "rvapp://com.yourbank.wallet" : "https://app.yourbank.example",
+    fields: ["national_id"],
+    subjectRef: req.user.customerId,  // ties the stored value to this customer
+    bindIp: req.ip,                   // only this address can use the token
+    ttlSeconds: 300,
+  });
+  res.json({ clientToken: client_token, expiresAt: expires_at });
+});
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+@app.post("/api/secure/collect-id")
+def collect_id(request: Request, user=Depends(current_user)):
+    t = vault.create_client_token(VAULT, "collect", "https://app.yourbank.example",
+                                  fields=["national_id"], subject_ref=user.customer_id,
+                                  bind_ip=request.client.host, ttl_seconds=300)
+    return {"clientToken": t["client_token"], "expiresAt": t["expires_at"]}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+t, err := client.CreateClientToken(r.Context(), vaultID, vault.ClientTokenRequest{
+    Kind: "collect", Origin: "https://app.yourbank.example", Fields: []string{"national_id"},
+    SubjectRef: user.CustomerID, BindIP: clientIP(r), TTLSeconds: 300,
+})
+```
+</Tabs.Tab>
+</Tabs>
+
+### Client: show the form
+
+<Tabs items={["Web", "iOS", "Android", "React Native"]}>
+<Tabs.Tab>
+```js
+const { clientToken } = await api.post("/api/secure/collect-id");
+const form = Onshore.collect({ vault: "v_live_gb01", clientToken, labels: { national_id: "NI number" } }).mount("#ni");
+saveButton.onclick = async () => {
+  const { national_id } = await form.submit();
+  await api.post("/api/profile/national-id", { token: national_id });
+};
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```swift
+CollectForm(client: onshore, clientToken: token, labels: ["national_id": "NI number"]) { tokens in
+    Task { try await api.post("/api/profile/national-id", ["token": tokens["national_id"]!]) }
+}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```kotlin
+CollectView(this, onshore, token, labels = mapOf("national_id" to "NI number"), onTokens = { t ->
+    lifecycleScope.launch { api.saveNationalId(t.getValue("national_id")) }
+})
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```tsx
+<CollectForm client={onshore} clientToken={token} labels={{ national_id: "NI number" }}
+  onTokens={(t) => api.post("/api/profile/national-id", { token: t.national_id })} />
+```
+</Tabs.Tab>
+</Tabs>
+
+### Server: save the token
+
+```ts
+app.post("/api/profile/national-id", requireUser, async (req, res) => {
+  const token = String(req.body.token);
+  if (!/^tok_uk_nino_[A-Za-z0-9]{8,}$/.test(token)) return res.sendStatus(400); // only accept a token
+  await db.customers.update(req.user.customerId, { national_id_token: token });
+  res.sendStatus(204);
+});
+```
+
+Check the shape: the endpoint should only ever accept a token, so a buggy or hostile client can't send a raw value instead.
+
+</Steps>
+
+## Reveal to a support agent
+
+<Steps>
+
+### Server: check access, then mint
+
+```ts
+app.post("/api/secure/reveal/:customerId", requireAgent, async (req, res) => {
+  const customer = await db.customers.get(req.params.customerId);
+  const ticket = await helpdesk.ticket(req.body.ticketId);
+
+  // Your rules: this agent is assigned to an open ticket for this customer.
+  if (ticket.customerId !== customer.id || ticket.assignee !== req.agent.id || ticket.closed) {
+    return res.sendStatus(403);
+  }
+
+  const { client_token } = await vault.createClientToken(VAULT, {
+    kind: "reveal",
+    origin: "https://support.yourbank.example",
+    tokens: [customer.national_id_token, customer.iban_token],
+    purpose: `Ticket ${ticket.id}`,
+    onBehalfOf: req.agent.email,
+    bindIp: req.ip,
+    ttlSeconds: 60,
+  });
+  res.json({ clientToken: client_token });
+});
+```
+
+<Callout type="warning">
+This check is the important part. Access rules apply to the **minting service account**, which can usually reveal for any customer. Only your server knows whether this agent should see this customer.
+</Callout>
+
+### Client: show the values
+
+```js
+const { clientToken } = await api.post(`/api/secure/reveal/${customerId}`, { ticketId });
+Onshore.reveal({ vault: "v_live_gb01", clientToken, labels: { 0: "NI number", 1: "IBAN" }, hideAfter: 60 })
+  .on("hidden", function () { this.unmount?.(); })
+  .mount("#customer-ids");
+```
+
+</Steps>
+
+The values appear inside the frame only, and hide after 60 seconds. The audit log records the purpose, the agent (`onBehalfOf`), the browser's IP and the decision for each value.
+
+## Common problems
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Frame is blank; console shows a `frame-ancestors` error | Page origin isn't listed under Secure components | Add the exact origin, with scheme and port |
+| `invalid_client_token` straight away | Token minted for another origin, already used, or expired | Mint per page view; check `origin` matches |
+| `invalid_client_token` after a typo | Not this: format errors don't spend the token | Check for a second `submit()` racing the first |
+| `policy_denied` on reveal | The rule has approved networks, and the browser isn't on one | Rules are checked against the browser's IP, not your server's |
+| Works on desktop, fails on mobile data | `bindIp` was set to an address that changed | Leave `bindIp` out for mobile networks, or mint just before use |
+
+## Next
+
+- [Web (rv.js) reference](/developers/sdks/web/)
+- [iOS](/developers/sdks/ios/), [Android](/developers/sdks/android/), [React Native](/developers/sdks/react-native/)
+- [Secure components in the console](/guides/connections/secure-components/)

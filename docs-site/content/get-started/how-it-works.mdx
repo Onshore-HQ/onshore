@@ -1,0 +1,101 @@
+---
+title: How it works
+description: Vaults, tokens, detection, access rules and the audit log, and how one value travels through Onshore.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# How it works
+
+Onshore is built from a few ideas. Once you know them, every screen in the console makes sense.
+
+## The five ideas
+
+### 1. A vault holds the real values, in one country
+
+A **vault** is where real values are stored, encrypted, on servers in the country you chose when you created it. **A vault's country never changes.** Each value is encrypted on its own with a data key, and data keys are themselves encrypted ("wrapped") by a master key held in a separate key service or your own hardware security module (HSM). The database never holds a key it could use alone.
+
+Each vault has **fields**: one per kind of value it keeps, such as `national_id`, `iban` or `phone`. A field decides what kind of token the value gets and how it's shown when masked.
+
+### 2. Tokens travel instead of values
+
+When a value goes into the vault, you get back a **token**, such as `tok_uk_nino_7Hq2xP9LmA4c`. Your databases, logs, vendors and dashboards keep the token. A leaked token gives away nothing.
+
+| Token kind | What it means | Use it for |
+| --- | --- | --- |
+| **Same value, same token** (deterministic) | The same value always gets the same token | Joins, lookups, following one customer through your logs |
+| **New token each time** (cell) | Every store gets a fresh token, and its value can be changed later | Records you edit, where linking isn't wanted |
+| **Expires** (transient) | The token stops working after a set time | One-time codes and short-lived values |
+
+And two formats:
+
+| Format | Example | Use it for |
+| --- | --- | --- |
+| **Clearly a token** (opaque) | `tok_in_aadhaar_Qa81LmZ3Xe0d` | Almost everything; nobody mistakes it for real data |
+| **Looks like the real value** (format-preserving) | `9912 3456 7890` | Old systems that check a value's length or shape |
+
+### 3. Detection finds values nobody labelled
+
+Field rules protect fields you know about. But real exposure is the ID number inside an error message, or a customer typing their account number into a chat. Onshore's **detection engine** reads free text and JSON and finds identifiers wherever they sit, using:
+
+- **Country packs**: the formats of each country's IDs, accounts and phone numbers, with the issuer's check digit where one is published. See [Countries](/countries/).
+- **The Everywhere pack**: names, emails, card numbers, amounts and international phone numbers, on for every vault.
+- **Your own data types**: patterns, keyword lists, values after a cue word, value lists and JSON fields. See [Data types](/guides/data-types/).
+
+Each match gets a confidence score. Words nearby ("NI number", "IBAN") raise it; words like "invoice" can lower it.
+
+### 4. Access rules decide who sees what
+
+Nobody sees a real value unless a **published access rule** says so. When someone or something asks for a value, a rule looks at **who** is asking (their role), **what** (which field or data type), **when** (office hours, an approved network, multi-factor sign-in, a stated purpose) and returns one of four answers:
+
+| Answer | What the person gets |
+| --- | --- |
+| **Real value** (plaintext) | The full value |
+| **Masked** | Part of it, such as `•• •• •• 56 C` |
+| **Token only** | Just the token |
+| **Denied** | Nothing |
+
+With no rule, the answer is **no**. Where several rules match, **the strictest wins**. Publishing a rule can require a second person's approval. See [Access rules](/guides/access-rules/).
+
+### 5. The audit log proves what happened
+
+Every store, reveal, refusal, export, deletion and setting change writes an entry to an **append-only, hash-chained audit log**. Each entry includes the fingerprint of the one before it, so changing any entry breaks the chain. The log's position is signed every day. Reports are computed from the log, never from separate counters. See [Audit log](/guides/audit-log/).
+
+## How one value travels
+
+<Steps>
+
+### It enters through a connection
+
+A customer types their ID number into a secure form on your site, your server calls the SDK, a log line passes through the log processor, or a prompt passes through the AI gateway. These are all **connections**.
+
+### It's found and stored
+
+Detection (or a field rule) finds the value. The vault encrypts it in the country and returns a token.
+
+### The token goes on
+
+The token, not the value, reaches your database, log vendor, model provider or helpdesk.
+
+### Someone asks for the real value
+
+A support agent opens a record, or your backend detokenizes. An access rule decides: real, masked, token or no. If allowed, the value is decrypted in the country and shown.
+
+### It's recorded
+
+The request, the person, their stated reason and the answer go into the audit log. Reports and the residency map are built from these records.
+
+</Steps>
+
+## The two halves of an install
+
+| Half | Touches real values? | Contains |
+| --- | --- | --- |
+| **Data plane** | Yes, and runs only in the vault's country | Vault API, detection and policy engines, log processor, AI gateway, HTTP proxy, file redactor, support tool adapters, PostgreSQL (values encrypted), the key service or your HSM |
+| **Control plane** | No | Console, people and roles, access rules, connections, reports, webhooks |
+
+The control plane's database role **can't read the vault's data tables at all**. Internal traffic between services uses mutual TLS. See [Security model](/security/).
+
+<Callout type="info">
+Every new connection and data type starts in **watch only**: Onshore counts what it would catch and changes nothing until you turn protection on.
+</Callout>

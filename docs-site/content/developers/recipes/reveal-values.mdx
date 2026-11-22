@@ -1,0 +1,141 @@
+---
+title: Reveal values safely
+description: Reveal values with a purpose, handle every decision, ask for less than the rules allow, and avoid the common ways revealed values leak.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Reveal values safely
+
+Revealing turns tokens back into values, as access rules allow. Done well, a value appears only where a person needs it, for a reason that's recorded, and leaves no copy behind.
+
+## How a reveal is decided
+
+For each token, the vault finds the access rules that apply to the caller (its role, the field, the network it's calling from, the time) and returns the most permissive decision they allow:
+
+| Decision | `value` holds | Typical rule |
+| --- | --- | --- |
+| `plaintext` | The full value | A payments service that must send the account number to a bank |
+| `masked` | The field's mask, such as `•• •• •• 56 C` or `****6789` | Support agents confirming identity |
+| `token_only` | The token itself | Services that only need to pass it on |
+| `denied` | nothing | Anyone without a rule |
+
+On top of the rules:
+
+- **Restricted people** reveal as `denied`, whatever the rules say.
+- **Reveal limits** on a rule (for example 200 plaintext reveals per hour per agent) return `429 rate_limited` once used up.
+- **Approved networks** on a rule apply to the caller's IP: a rule that only allows the office network won't apply from home.
+- **Break-glass**: someone without a rule can ask for temporary access, which a second person approves. It's logged prominently.
+
+## Always give a real purpose
+
+The purpose is recorded next to every value revealed, and it's what an auditor or regulator reads. Make it specific enough to answer "why was this seen?":
+
+| Weak | Strong |
+| --- | --- |
+| `"support"` | `"Ticket 88213, agent ada@yourbank.example"` |
+| `"batch"` | `"Statement run 2026-11, job 4471"` |
+| `"view customer"` | `"KYC review case 551"` |
+
+Don't put customer values in a purpose. If one slips in, the vault removes recognised identifiers before logging it: `Ticket 7 for AB123456C` is recorded as `Ticket 7 for [uk_nino removed]`.
+
+## Handle every decision
+
+<Tabs items={["Node.js", "Python", "Go"]}>
+<Tabs.Tab>
+```ts
+type Shown = { kind: "full" | "masked"; text: string } | { kind: "hidden" };
+
+function toShown(r: DetokenizeResult): Shown {
+  switch (r.decision) {
+    case "plaintext": return { kind: "full", text: r.value! };
+    case "masked": return { kind: "masked", text: r.value! };
+    default: return { kind: "hidden" };           // token_only and denied: show nothing useful
+  }
+}
+
+const results = await vault.detokenize(VAULT, [c.national_id_token, c.iban_token], `Ticket ${ticket.id}`);
+const [nationalId, iban] = results.map(toShown);
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+def shown(r):
+    if r["decision"] in ("plaintext", "masked"):
+        return {"kind": "full" if r["decision"] == "plaintext" else "masked", "text": r["value"]}
+    return {"kind": "hidden"}
+
+national_id, iban = map(shown, vault.detokenize(VAULT, [c.national_id_token, c.iban_token], f"Ticket {ticket.id}"))
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+out, err := client.Detokenize(ctx, vaultID, []string{c.NationalIDTok, c.IBANTok}, "Ticket "+ticketID)
+if err != nil {
+    return err // fail closed: show nothing
+}
+for _, r := range out {
+    if r.Decision == "plaintext" || r.Decision == "masked" {
+        show(r.Index, r.Value, r.Decision == "masked")
+    }
+}
+```
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="warning">
+**Never fall back.** If a reveal throws, show nothing and say the value is unavailable. Don't show the token, a cached value, or a value from another system. That's what "fail closed" means, and the SDKs are built around it.
+</Callout>
+
+## Ask for less
+
+A rule might allow plaintext, but a page that only confirms identity doesn't need it. Ask for masked; the decision can only narrow:
+
+```ts
+const [r] = await vault.detokenize(VAULT, [{ token: c.national_id_token, redaction: "masked" }], "Account overview");
+```
+
+Use this on list views, dashboards and anywhere a full value isn't the point. It shrinks what a compromised session or a shoulder-surfer could see.
+
+## Reveal in the browser, not through your server
+
+If a person needs to see a full value on screen, a [reveal component](/developers/recipes/collect-and-reveal/) shows it inside a frame from the vault: your servers, your API responses and your front-end code never hold it. Reveal through your server only when your server needs the value itself (to send to a bank, to print a statement).
+
+## Don't let revealed values leak
+
+| Leak | Prevention |
+| --- | --- |
+| Logged in an API response | Don't return plaintext from your API; use a reveal component. If you must, exclude the field from response logging |
+| Error trackers capture variables | Scrub fields named like `value`, or wrap revealed values in an object whose `toString()` hides them |
+| Cached by your server | Don't cache plaintext. Re-reveal when needed; the vault is fast (single-digit milliseconds at p95 for a batch of 10) |
+| Cached by the browser | `Cache-Control: no-store` on any response containing a value |
+| Kept in analytics or a warehouse | Send tokens, never values |
+| Seen in a screenshot | Mobile reveal views hide after a time and when the app goes to the background; Android blocks screenshots |
+
+## Batch reveals
+
+A statement job revealing 50,000 addresses: pass them all to one `detokenize` call (the SDK sends 500 at a time), use `continueOnError` so one erased customer doesn't stop the run, and give a purpose naming the job.
+
+```ts
+const results = await vault.detokenize(VAULT, addressTokens, `Statement run ${month}, job ${jobId}`, { continueOnError: true });
+const missing = results.filter((r) => r.error?.code === "token_not_found").length;
+const notAllowed = results.filter((r) => r.decision && r.decision !== "plaintext").length;
+if (notAllowed) throw new Error(`job's access rule doesn't allow plaintext for ${notAllowed} addresses`);
+```
+
+Batch jobs need a service account with a rule allowing plaintext for those fields, ideally limited to the job's network and hours.
+
+## Reading a whole record
+
+If you stored with `insertRecord`, read everything back with one call:
+
+```ts
+const fields = await vault.getRecord(VAULT, customer.onshore_record, `KYC review ${caseId}`);
+for (const [name, r] of Object.entries(fields)) render(name, toShown(r));
+```
+
+## Next
+
+- [Collect and reveal in the front end](/developers/recipes/collect-and-reveal/)
+- [Access rules](/guides/access-rules/)
+- [Audit log](/guides/audit-log/)

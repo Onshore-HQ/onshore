@@ -1,0 +1,16 @@
+---
+title: Kubernetes
+description: The Helm chart for high-availability installs, in early access.
+---
+
+import { Callout } from "nextra/components";
+
+# Kubernetes <Early />
+
+A Helm chart in `deploy/helm` runs several vault API replicas, an external PostgreSQL with a replica, and your HSM for keys.
+
+<Callout type="warning">
+The chart has passed linting and Kubernetes 1.30 schema validation only. **It has never been installed on a cluster.** Treat it as a starting point for your own review.
+</Callout>
+
+Plan for: PostgreSQL primary and replica in the same country, an HSM or an OpenBao cluster, mutual TLS between services, and network policies so only the edge is reachable. Rate limits are per process and per replica.

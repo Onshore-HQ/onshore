@@ -1,0 +1,43 @@
+---
+title: AI gateway integration
+description: Point an OpenAI-compatible client at the AI gateway. Headers, restoring replies, streaming and digital twins.
+---
+
+# AI gateway integration
+
+Create an AI route in the console ([AI gateway](/guides/connections/ai-gateway/)). Then change your client's **base URL** and add the **route key**.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://vault.yourbank.example/ai/<route-id>/v1",   # was the provider's URL
+    api_key=os.environ["OPENAI_API_KEY"],                         # your provider key, passed through
+    default_headers={
+        "X-RV-Route-Key": os.environ["ONSHORE_ROUTE_KEY"],
+        # Optional. Without it, values come back masked. With a token whose access rules
+        # allow plaintext, and a route that restores, they come back in full.
+        "X-RV-Caller-Token": caller_token,
+    },
+)
+
+reply = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": message}])
+```
+
+| Header | Meaning |
+| --- | --- |
+| `X-RV-Route-Key` | Required. The route's key |
+| `X-RV-Caller-Token` | Optional. A bearer token for the person or service the reply is for; decides whether restored values are real or masked |
+| `X-RV-Cloak-Id` (response) | The digital twin's ID, when the route keeps twins |
+
+## What happens
+
+1. The prompt is cloaked with the route's cloak setting before it leaves the country.
+2. The provider answers.
+3. If the route restores replies, placeholders and stand-in names are swapped back, in full for callers allowed plaintext, otherwise masked.
+
+Replies **still stream**: values are restored as the stream comes back. Only models listed on the route are allowed.
+
+## Without the gateway
+
+Use the [Cloak API](/developers/cloak-api/) to cloak and restore text yourself, for any provider or service.

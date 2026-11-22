@@ -1,0 +1,32 @@
+---
+title: Run it yourself
+description: Everything for the engineers who install and operate Onshore on their own servers.
+---
+
+# Run it yourself
+
+Onshore ships as containers. Every edition, including Onshore Cloud, runs the same ones.
+
+| Service | Does | Compose profile |
+| --- | --- | --- |
+| `edge` (Caddy) | TLS, routing, security headers | always |
+| `vault-api` | Data API, detection, access rules, audit chain | always |
+| `control-api` | Configuration, people, reports, webhooks | always |
+| `console` | The web console | always |
+| `postgres` | Database (values encrypted) | always |
+| `keys` (OpenBao) | Key service holding the master key | always |
+| `log-processor` | Log redaction | `logs` |
+| `ai-gateway` | AI gateway | `ai` |
+| `http-proxy` | HTTP proxy | `proxy` |
+| `adapters` | Support tool adapters | `adapters` |
+| `file-redactor` | PDFs, images, audio | `files` |
+| `tools` | `rv`, migrations | `tools` |
+
+<Cards items={[
+  ["Install", "/get-started/install/", "From a clean server to a working install."],
+  ["Requirements and sizing", "/operate/requirements/", "Servers for a pilot, production and high availability."],
+  ["Configuration", "/operate/configuration/", "Every setting in .env."],
+  ["Keys and unsealing", "/operate/keys/", "Key shares, unsealing after a restart, rotation."],
+  ["The rv tool", "/operate/rv-cli/", "Every operator command."],
+  ["Known limits", "/operate/known-limits/", "What's been tested, and what hasn't."],
+]} />

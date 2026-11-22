@@ -1,0 +1,46 @@
+/** The "What is this?" drawer on each page: plain words, written for someone seeing the screen for the first time. */
+export interface Help { what: string; when: string[]; next?: { label: string; href: string }; terms?: string[] }
+
+export const GLOSSARY: Record<string, string> = {
+  Vault: "The protected store that runs on your servers, in its own country. Real values live here, encrypted one by one.",
+  Token: "A stand-in for a real value, such as tok_bvn_8f2a. Other systems keep the token, so the real value never leaves.",
+  Reveal: "Swapping a token back for the real value. It needs permission and a stated reason, and it is always logged.",
+  Mask: "Showing part of a value, such as *******2873, so someone can recognise it without seeing it.",
+  Connection: "A route that sends data through Onshore on its way out: logs, AI prompts, or calls to a vendor.",
+  "Watch only": "Onshore counts the sensitive values it finds but changes nothing. Use it first, to learn what is leaving.",
+  Protecting: "Sensitive values are replaced before data leaves the country.",
+  "Data type": "A kind of sensitive value Onshore can recognise, such as a BVN, a NIN or your own loan ID.",
+  Flow: "One path data takes from a system of yours to another system or vendor.",
+  Leaking: "Onshore has seen sensitive values leave on this flow, or you told us they do.",
+  "Flow score": "The share of your in-scope flows that are safe.",
+  "Volume score": "The share of sensitive values, counted over 30 days, that were protected or stayed in the vault's country.",
+  "Access rule": "Says who can see real values, and in what form. Nobody can until a published rule says so.",
+  "Emergency access": "A short-lived extra permission for an incident. A second person must approve it, and every report flags it.",
+  "Approved network": "An office range or VPN you trust. Access rules can require a person to be on one.",
+  "Master key": "The key that protects all other keys. It stays in the key service, or in your own HSM.",
+  "Data key": "The key that encrypts one vault's values. It is stored only in encrypted form.",
+  "Service account": "A login for a program rather than a person, such as your backend.",
+};
+
+export const HELP: Record<string, Help> = {
+  "/overview": { what: "Your starting point. It shows what to do next and anything that needs attention, with the most urgent first.", when: ["When you sign in", "To see at a glance whether anything is leaking"], terms: ["Connection", "Watch only", "Protecting"] },
+  "/connect": { what: "A list of the places sensitive data usually leaks from. Pick one, and Onshore explains what it needs and takes you to set it up.", when: ["Adding your first connection", "When a new vendor or tool starts receiving customer data"], terms: ["Connection", "Watch only"] },
+  "/residency-map": { what: "A picture of every system and vendor that receives payment or identity data, and whether each path is safe. Onshore works out each status from what it actually sees.", when: ["To answer: where does our customer data go?", "To find and assign what still needs fixing", "Before an audit"], next: { label: "Connect something", href: "/connect" }, terms: ["Flow", "Leaking", "Flow score", "Volume score"] },
+  "/pipelines": { what: "Everything that sends data through Onshore. Each connection starts as watch only, and you turn protection on when you trust what you see.", when: ["To check what a connection is catching", "To turn protection on or off", "To change what happens to each data type"], next: { label: "Connect something", href: "/connect" }, terms: ["Connection", "Watch only", "Protecting", "Token", "Mask"] },
+  "/page-protection": { what: "Watches the scripts running on pages that collect sensitive data, and tells you when a new one appears or an approved one changes. This is how card skimmers are caught.", when: ["Protecting a signup, KYC or payment page"] },
+  "/detection": { what: "The kinds of sensitive data Onshore looks for everywhere. Each vault's country packs bring that country's identifiers, and you can add your own, such as loan or wallet IDs.", when: ["To see what is recognised out of the box", "To add a format specific to your business"], terms: ["Data type", "Watch only"] },
+  "/vaults": { what: "A vault holds real values, and each field in it decides how one kind of value is replaced and shown. Most teams need one for testing and one for live data.", when: ["Adding a kind of data to protect", "Changing how a value is masked", "Allowing a website to use secure forms"], terms: ["Vault", "Token", "Mask"] },
+  "/files": { what: "Upload a PDF, image, recording or text file, and download a copy with the sensitive data removed. Onshore keeps nothing.", when: ["Before sending a document to a vendor or an offshore team"] },
+  "/records": { what: "The customers who have data in a vault. Find one to see what is held, who has viewed it, or to export or erase it.", when: ["Handling a data subject request", "Checking who viewed a customer's data"], terms: ["Reveal", "Mask"] },
+  "/records/import": { what: "Load customers you already hold from a CSV. Your file is read in this browser and sent in small batches. You get the same file back with tokens, to put in your own database.", when: ["Moving existing customer data into Onshore", "Before a data localisation deadline, for data you already hold"], terms: ["Vault", "Token"] },
+  "/people": { what: "Everyone who can sign in, and the programs that call Onshore. It shows what each has looked at, and flags anything unusual.", when: ["Adding a teammate or a backend service", "Reviewing who has been viewing real values"], terms: ["Service account", "Reveal"] },
+  "/policies": { what: "The rules for who can see real values. Nobody can until a published rule says so, and publishing needs a second person.", when: ["Letting a team see masked or real values", "Limiting access to office networks", "Granting access during an incident"], terms: ["Access rule", "Approved network", "Emergency access", "Reveal", "Mask"] },
+  "/reports": { what: "A signed report for your compliance officer, covering where data lives, what was protected and who had access. It is evidence, and doesn't by itself establish compliance.", when: ["Preparing for a regulator's review", "Monthly compliance reporting"] },
+  "/audit": { what: "A record of everything anyone does with protected data. Past entries can't be changed without it showing, and no entry holds a sensitive value.", when: ["Investigating an incident", "Answering: who viewed this, and why?"] },
+  "/keys": { what: "The keys that protect your data, and how often they change. They stay in your vaults' country, inside the key service or your own HSM.", when: ["Scheduled rotation", "After a suspected compromise"], terms: ["Master key", "Data key"] },
+  "/monitoring": { what: "Whether each part of Onshore is answering, what it did in the last hour, and where alerts are sent.", when: ["When something seems broken", "Sending alerts to your own tools"] },
+  "/usage": { what: "How much Onshore did over a period: values protected, values shown in full or masked, requests refused, and how fast it answered. Pick a period at the top.", when: ["Sizing and budgeting", "Answering: how much does it handle?", "Spotting a slow service"], terms: ["Token", "Reveal", "Mask"] },
+  "/logs": { what: "Every request each part of Onshore handled, newest first, with its result and how long it took. Search by the request ID shown in an error message to find the exact call. No entry holds a sensitive value.", when: ["An integration is failing and you need to see why", "Checking what a service did at a given time"], next: { label: "See usage", href: "/usage" } },
+  "/settings": { what: "Your organisation's details, sign-in options, licence and how long audit records are kept.", when: ["First setup", "Setting up email for invitations, resets and alerts", "Replacing your authenticator or recovery codes", "Turning on single sign-on"] },
+  "/onboarding": { what: "A guided way to make a test vault with made-up customers and connect your logs in watch-only mode. It changes nothing in your logs.", when: ["Your first hour with Onshore"], terms: ["Vault", "Watch only"] },
+};

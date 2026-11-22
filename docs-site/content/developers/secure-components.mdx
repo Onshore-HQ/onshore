@@ -1,0 +1,93 @@
+---
+title: Secure components (web)
+description: Collect and reveal values in a frame served by your vault. Client tokens, the script, events, styling and security.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Secure components (web)
+
+Collect or show an ID number, account number or your own data type inside a frame on your site. Your page and servers get a token back and never see the value. Set up the allowed sites first: [Secure components](/guides/connections/secure-components/).
+
+## Collect
+
+<Steps>
+
+### Mint a client token on your server
+
+```http
+POST /v1/vaults/v_live_gb01/client-tokens
+{ "kind": "collect", "origin": "https://app.yourbank.example", "fields": ["national_id"],
+  "subject_ref": "cust_1042", "ttl_seconds": 120 }
+```
+
+Returns `{ "client_token": "rvct_…", "expires_at": "…" }`. Single use; 2 minutes by default, 10 at most; tied to one origin and up to 10 fields.
+
+### Mount the form on your page
+
+```html
+<script src="https://vault.yourbank.example/embed/rv.js"></script>
+<div id="national-id"></div>
+<button id="save" disabled>Save</button>
+<script>
+  const form = Onshore.collect({
+    vault: "v_live_gb01",
+    clientToken,                          // from your server
+    labels: { national_id: "Your ID number" },
+    theme: { accent: "#2574de", radius: "8px" },
+  });
+  form.on("change", (e) => { save.disabled = !e.complete; });
+  form.mount("#national-id");
+
+  save.onclick = async () => {
+    const tokens = await form.submit();   // { national_id: "tok_…" }
+    // Send the token to your server. The value never came through this page.
+  };
+</script>
+```
+
+</Steps>
+
+A format mistake shows inside the frame and doesn't use up the token. `submit()` rejects with `err.fields` naming the fields to correct, never their contents.
+
+## Reveal
+
+```http
+POST /v1/vaults/v_live_gb01/client-tokens
+{ "kind": "reveal", "origin": "https://app.yourbank.example", "tokens": ["tok_…"],
+  "purpose": "Support ticket 7", "on_behalf_of": "agent ada", "bind_ip": "203.0.113.7" }
+```
+
+```js
+Onshore.reveal({ vault, clientToken, labels: { 0: "ID number" }, hideAfter: 30 }).mount("#value");
+```
+
+The value shows inside the frame only, and hides after `hideAfter` seconds (30 by default, up to 300). Your page learns only the decision, such as `masked` or `plaintext`. A reveal token covers up to 20 tokens.
+
+<Callout type="warning">
+Your server must check that **this person may see this record** before minting a reveal token. Access rules apply to the service account that minted it, and the audit log records your `purpose` and `on_behalf_of`. Set `bind_ip` to the person's address where you can.
+</Callout>
+
+## Events
+
+| Event | Component | Carries |
+| --- | --- | --- |
+| `ready` | Collect | |
+| `change` | Collect | `complete`: every field is filled in |
+| `enter` | Collect | The person pressed Enter |
+| `invalid` | Collect | `fields` to correct |
+| `complete` | Collect | `tokens` |
+| `revealed` | Reveal | `decisions` |
+| `hidden` | Reveal | |
+| `error` | Both | `code` |
+
+## Styling
+
+A short list of checked values: `color`, `muted`, `background`, `inputBackground`, `border`, `accent`, `error`, `radius`, `fontSize` and `font` (`serif` or `mono`). Free-form CSS isn't allowed, because CSS could read what's typed.
+
+## Security
+
+- The frame is a different origin; your page can't read it.
+- Access rules are checked again when the token is used, against the **browser's** address. An approved-network rule applies to the browser, not your server.
+- The frame allows only its own script and stylesheet, and only listed sites can frame it.
+- Card numbers can't be collected here; they're refused everywhere in the vault.

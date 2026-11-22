@@ -1,0 +1,48 @@
+---
+title: Groups and roles
+description: Let your identity provider's groups decide people's roles in Onshore, for single sign-on, SCIM and LDAP.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Groups and roles
+
+Map a group at your identity provider to roles in Onshore. Once any group is mapped, **people's roles follow their groups** each time they sign in or are synced. This works the same for [single sign-on](/identity/single-sign-on/), [SCIM](/identity/scim/) and [LDAP](/identity/ldap/), and in every edition.
+
+<Steps>
+
+### Add a group
+
+In **Settings → Sign-in → Groups and roles**, select **Add a group**.
+
+### Name it
+
+Type the group's name, such as `Onshore-Admins`, or for Entra ID, the group's ID. Names match without regard to case.
+
+### Choose roles
+
+Tick the roles members get. A person in several mapped groups gets every role from all of them.
+
+### Save
+
+Select **Save mappings**.
+
+</Steps>
+
+## What changes
+
+| | Without mappings | With mappings |
+| --- | --- | --- |
+| Roles | Set by hand on the People page | Follow groups at every sign-in or sync |
+| Someone with no mapped group | Signs in with whatever roles they have | **Can't get in**, and loses their roles |
+| New people (with account creation on) | Not created | Created with their groups' roles |
+
+<Callout type="warning">
+**The last admin is never removed this way.** If a group change would leave your organisation with no active admin, that person keeps the admin role.
+</Callout>
+
+## Tips
+
+- Create dedicated groups such as `Onshore-Admins`, `Onshore-DPO`, `Onshore-Support`, rather than reusing broad ones.
+- Remove someone from Onshore by removing them from its groups at your provider: their roles go at their next sign-in or sync. With SCIM, deactivating them ends their sessions immediately.
+- Roles are listed in [People and roles](/guides/people-and-roles/#roles).

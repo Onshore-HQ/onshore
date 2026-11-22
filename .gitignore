@@ -1,0 +1,49 @@
+# Dependencies and build output
+node_modules/
+.next/
+dist/
+out/
+*.tsbuildinfo
+next-env.d.ts
+__pycache__/
+*.pyc
+.DS_Store
+
+# Secrets and local state (never commit)
+.env
+.env.*
+!.env.example
+demo/.state/
+deploy/compose/certs/*
+!deploy/compose/certs/.gitkeep
+deploy/compose/internal-tls/
+deploy/compose/bundle/
+*.pem
+*.key
+
+# Test outputs
+rv-support-*.tar.gz
+shares.e2e
+report.e2e.pdf
+e2e-py.env
+e2e-load.env
+licence.e2e
+
+# The website is its own repository
+website/
+
+# Pitch, research, AI notes and planning specs (not part of the product)
+pitch/
+research_notes/
+reports/
+.backups/
+CLAUDE.md
+AGENTS.md
+.claude/
+Onshore — Demo & Pitch Kit Spec.md
+Onshore — Update Spec 02 Residency Map.md
+Residency Vault — Full Build Spec.md
+Residency Vault — Update Spec 01 Custom Detection Entities.md
+
+# SDKs live in their own repositories (Onshore-HQ/onshore-<language>)
+sdks/

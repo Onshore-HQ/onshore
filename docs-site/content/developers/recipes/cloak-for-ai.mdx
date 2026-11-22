@@ -1,0 +1,173 @@
+---
+title: Cloak text for AI
+description: Send prompts to an AI model in another country without the identifiers in them, restore the model's replies, and handle streaming, tool calls and multi-turn chats.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Cloak text for AI
+
+AI models usually run outside your customers' country. Cloaking replaces identifiers in a prompt with placeholders, stand-in names or less specific values before it leaves, and keeps a sealed map (a **digital twin**) in the vault so the model's reply can be restored for the person who's allowed to see it.
+
+```
+"Hi, I'm Sarah Johnson, 34. My card 4111 1111 1111 1111 was charged £1,250.50 twice."
+        │ cloak (in the country)
+        ▼
+"Hi, I'm Emily Carter, 34. My card [CARD_1] was charged £1k–£2k twice."  ──▶  model abroad
+        ▲
+        │ uncloak (in the country, as access rules allow)
+"Sorry Sarah, I've flagged the duplicate charge on ****1111."  ◀── "Sorry Emily, I've flagged … [CARD_1]."
+```
+
+Two ways to do it:
+
+| | AI gateway | Cloak API |
+| --- | --- | --- |
+| How | Point your OpenAI or Anthropic SDK's base URL at the vault | Call `cloak` and `uncloak` yourself |
+| Code changes | One line | A few calls around the model call |
+| Works with | OpenAI-compatible and Anthropic APIs | Any model, any provider, any outside service |
+| Guide | [AI gateway](/developers/ai-gateway/) | This page |
+
+## Choose what each kind of data becomes
+
+| Data type | Choices | Restored by uncloak? |
+| --- | --- | --- |
+| `person_name` | `placeholder` → `[NAME_1]`, `synthetic` → a realistic stand-in, `keep` | Placeholder and stand-in: yes |
+| `amount` | `placeholder`, `band` → `£1k–£2k` (same currency), `keep` | Placeholder: yes. Band: no |
+| `date` (dates of birth) | `placeholder`, `age_band` → `aged 35–44`, `year` → `1988`, `keep` | Placeholder: yes |
+| `address` | `keep` (default), `state` → `New York`, `region` → `United States`, `placeholder` | Placeholder: yes |
+| `phone`, `card_pan`, `payment_ref` | `placeholder`, `last4` → `****1234` | Placeholder: yes |
+| `email` | `placeholder`, `domain` → `a gmail.com address` | Placeholder: yes |
+| `phone_ng` | `placeholder`, `network` → `an MTN number`, `last4` | Placeholder: yes |
+| Country pack types: `uk_nino`, `iban`, `us_ssn`, `in_aadhaar`, `br_cpf`, `za_id`, … | `placeholder`, `last4` | Placeholder: yes |
+
+Anything not listed, including your own data types, becomes a placeholder.
+
+**Which to pick:** stand-in names make replies read naturally ("Dear Emily") and models handle them better than `[NAME_1]`. Bands and age ranges keep what the model needs to reason ("a mid-sized refund", "a customer in their thirties") without the exact value. Use `keep` only when the model genuinely needs the value and your data protection assessment allows it.
+
+Save a combination in the console as a **cloak setting** (**Connections → AI → Cloak settings**) and pass its `profileId`, so every service uses the same choices and admins can change them without a deploy. Or pass `options` inline.
+
+## Cloak, call the model, restore
+
+<Tabs items={["Node.js (OpenAI)", "Python (Anthropic)", "Go"]}>
+<Tabs.Tab>
+```ts
+import OpenAI from "openai";
+const openai = new OpenAI();
+
+export async function answer(chatId: string, customerMessage: string) {
+  const cloaked = await vault.cloak(VAULT, customerMessage, { profileId: "cp_support_chat", keepDays: 1 });
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-5",
+    messages: [
+      { role: "system", content: "You are a bank support assistant. Placeholders like [CARD_1] stand for real values; repeat them exactly." },
+      { role: "user", content: cloaked.text },
+    ],
+  });
+
+  const restored = await vault.uncloak(VAULT, cloaked.id!, completion.choices[0].message.content ?? "", `Support chat ${chatId}`);
+  return restored.text;   // what the agent or customer sees
+}
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+import anthropic
+claude = anthropic.Anthropic()
+
+def answer(chat_id: str, customer_message: str) -> str:
+    c = vault.cloak(VAULT, customer_message, profile_id="cp_support_chat", keep_days=1)
+    msg = claude.messages.create(
+        model="claude-sonnet-5-5",
+        max_tokens=1024,
+        system="You are a bank support assistant. Placeholders like [CARD_1] stand for real values; repeat them exactly.",
+        messages=[{"role": "user", "content": c["text"]}],
+    )
+    reply = "".join(b.text for b in msg.content if b.type == "text")
+    return vault.uncloak(VAULT, c["id"], reply, f"Support chat {chat_id}")["text"]
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```go
+cl, err := client.Cloak(ctx, vaultID, customerMessage, vault.CloakRequest{ProfileID: "cp_support_chat", KeepDays: 1})
+if err != nil {
+    return "", err
+}
+reply, err := llm.Complete(ctx, systemPrompt, cl.Text)
+if err != nil {
+    return "", err
+}
+out, err := client.Uncloak(ctx, vaultID, cl.ID, reply, "Support chat "+chatID)
+return out.Text, err
+```
+</Tabs.Tab>
+</Tabs>
+
+Tell the model in the system prompt to repeat placeholders exactly. Models sometimes reformat `[CARD_1]` as `CARD_1` or translate it, and then it can't be restored.
+
+## Who sees what after uncloak
+
+Uncloak is a reveal. Each kind of value comes back in full only if the caller's access rules allow **plaintext** for it; otherwise it comes back masked. `decisions` tells you what happened:
+
+```ts
+const { text, decisions } = await vault.uncloak(VAULT, twinId, reply, `Support chat ${chatId}`);
+// decisions = { person_name: "plaintext", card_pan: "masked" }
+```
+
+So a support bot's service account can restore names but leave card numbers masked, with no code changes, just access rules.
+
+## Multi-turn conversations
+
+Cloak each new message, and keep the conversation history **cloaked** on your side: send the model the cloaked history, uncloak only what you show. Keep one twin per message (each `cloak` call returns its own `id`) and uncloak a reply with the twin of the message it answers. If a reply refers back to values from several earlier messages, uncloak it with each relevant twin in turn.
+
+Placeholder numbering (`[NAME_1]`) starts again in each call, so `[NAME_1]` in message 1 and `[NAME_1]` in message 3 can be different people. Cloak the whole conversation in one call when the model must tell people apart across turns.
+
+## Streaming
+
+Uncloak works on complete text: a placeholder split across two chunks (`[CA` + `RD_1]`) can't be restored. Either buffer the full reply and uncloak once, or buffer up to the end of each sentence and uncloak sentence by sentence.
+
+```ts
+let buffer = "";
+for await (const chunk of stream) {
+  buffer += chunk.choices[0]?.delta?.content ?? "";
+  const end = buffer.lastIndexOf(". ");
+  if (end > 0) {
+    const ready = buffer.slice(0, end + 2);
+    buffer = buffer.slice(end + 2);
+    send((await vault.uncloak(VAULT, twinId, ready, purpose)).text);
+  }
+}
+if (buffer) send((await vault.uncloak(VAULT, twinId, buffer, purpose)).text);
+```
+
+## Tool calls
+
+When the model calls a tool, its arguments contain placeholders (`refund_card({"card": "[CARD_1]"})`). Your tool runs on your side, so uncloak the arguments before running it, then cloak the tool's result before sending it back:
+
+```ts
+const args = JSON.parse((await vault.uncloak(VAULT, twinId, call.function.arguments, `Tool ${call.function.name}`)).text);
+const result = await tools[call.function.name](args);
+const back = await vault.cloak(VAULT, JSON.stringify(result), { profileId: "cp_support_chat" });
+messages.push({ role: "tool", tool_call_id: call.id, content: back.text });
+```
+
+The tool's service account needs plaintext for the fields it uses.
+
+## Twins
+
+- `keepDays` from 1 to 365 keeps a twin; 0 (the default) keeps none, which is right for one-way uses such as sending text to a translation service or analytics.
+- Delete a twin when the conversation ends with `deleteTwin`; it expires on its own otherwise.
+- An expired or deleted twin fails uncloak with `not_found`.
+- Twins are sealed with the vault's keys and never leave the country.
+
+## Limits
+
+- Text up to 256 KB per call (`413 too_large`).
+- Ranges, age bands, years, states and regions can't be reversed.
+- Cloaking relies on detection, so an identifier in an unusual format can be missed. Try your real prompts in the **Playground** on the AI tab of Connections before going live, and add your own data types for your identifiers.
+
+## Next
+
+- [AI gateway](/developers/ai-gateway/): the same with a one-line change
+- [Protect free text](/developers/recipes/detect-in-text/)

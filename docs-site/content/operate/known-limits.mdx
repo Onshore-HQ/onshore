@@ -1,0 +1,52 @@
+---
+title: Known limits
+description: What has been tested, what hasn't, and what must be closed before real customer data goes in.
+---
+
+import { Callout } from "nextra/components";
+
+# Known limits
+
+Onshore is in early access. This page says plainly what has and hasn't been tested, so you can decide what matters for you.
+
+<Callout type="error">
+**Don't load real customer data yet.** Onshore hasn't had an independent penetration test, and most testing has been on one machine against stand-ins for real vendors.
+</Callout>
+
+## Must close before real customer data
+
+- **An independent penetration test.** Internal attack suites have run repeatedly; they don't replace an outside test.
+- **Support tool adapters against live accounts.** All four are tested only against stand-ins.
+- **Performance on real hardware.** Tokenize at 10 concurrent clients is close to, but above, its 30 ms target on a laptop.
+- **Mobile SDKs on real devices.** Only an emulator and a simulator so far.
+- **Your signed legal positions.** Record your scope definition and each connection's legal ground; Onshore assumes nothing.
+
+## Tested, with limits
+
+| Area | Tested | Not yet |
+| --- | --- | --- |
+| Vault, detection, access rules, audit, log processor, console | Full end-to-end runs and internal attack passes | Production load |
+| Single sign-on | OIDC and SAML through Keycloak in a real browser, including a signed SAML login | Entra ID, Okta, Google, ADFS |
+| SCIM | 29 checks with Entra- and Okta-shaped requests | A live Entra or Okta tenant |
+| LDAP | OpenLDAP over LDAPS and StartTLS | Active Directory |
+| Passkeys | Chromium with a virtual authenticator | Real phones and keys, Safari, Firefox |
+| File redaction | One generated PDF, image and recording | Faces, signatures, stamps; non-English speech |
+| Secure components | Chromium, hostile host page, replay, racing | Safari, Firefox, mobile browsers |
+| HSM | SoftHSM | A hardware HSM |
+| Helm chart | Lint and schema validation | Installing on a cluster |
+| Linked installs | End to end on one machine | Across real countries |
+| Country packs | 31 checks through the API and the screens | Real-world ID samples from each country |
+| French | Every console string | Native review; server text, emails and the PDF are still English |
+
+## Detection
+
+- A bare number after a word like `order`, `ref`, `ticket` or `invoice` isn't flagged, because those words usually mean a genuine order number. An explicit cue such as "NI number" wins. Add your own data type if you'd rather catch them.
+- Names are found with dictionaries and context, not a trained language model.
+- Accuracy on languages other than English hasn't been measured.
+
+## Other limits
+
+- Between daily signed checkpoints, someone with database-owner rights could rewrite recent audit entries unless a SIEM copy is configured.
+- Rate limits are per process and per replica.
+- The internal certificate authority lasts 10 years and has no rotation tool yet.
+- Single logout and IdP-initiated sign-in aren't built. Linked installs have no shared sign-in, rule sync or combined audit yet.

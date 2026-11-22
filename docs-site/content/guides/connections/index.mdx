@@ -1,0 +1,51 @@
+---
+title: Connections
+description: Everything that sends data through Onshore on its way out. Logs, AI tools, web APIs, support tools and pages.
+---
+
+import { Callout } from "nextra/components";
+
+# Connections
+
+A **connection** puts Onshore in the path of data that would otherwise leave the country: your logs on their way to a log vendor, prompts on their way to an AI model, requests to a vendor API, tickets in a helpdesk. **Connections** lists them all, with what each has caught.
+
+<Shot src="/screenshots/connections.png" alt="Connections: tabs for All, Logs, AI, Web APIs, Support tools and Page protection, a summary line, and a card per connection with its status and a 30-day chart" />
+
+The summary line shows how many connections there are, how many are protecting, how many are watch only, and how many values were caught in 30 days. **flows on the map** opens the [residency map](/guides/residency-map/).
+
+Each card shows the connection's kind and destination, its status, a 30-day chart of values caught, and when it last saw traffic.
+
+## Watch only, then protecting
+
+<Callout type="info">
+Every connection **starts as watch only**: it counts what would have left the country, and changes nothing. When the counts look right, open it and select **Turn protection on**. **Back to watch only** reverses it, and the residency report records both.
+</Callout>
+
+## Add a connection
+
+Select **Add a connection** to choose what to protect.
+
+<Shot src="/screenshots/connect.png" alt="Connect something: choices for logs, AI tools, error tools, vendor APIs, support tools, pages and database copies, each explaining what it stops, what you need and what happens" />
+
+Each choice says **what it stops**, **what you need**, and **what happens**:
+
+| Choice | Guide |
+| --- | --- |
+| Logs, error tools (OpenTelemetry, Fluent Bit, Vector) | [Logs](/guides/connections/logs/) |
+| AI tools and chatbots | [AI gateway](/guides/connections/ai-gateway/) |
+| Vendor and partner APIs | [Web APIs](/guides/connections/http-proxy/) |
+| Freshdesk, Zoho Desk, Salesforce, Intercom | [Support tools](/guides/connections/support-tools/) |
+| Checkout and sign-up pages | [Page protection](/guides/connections/page-protection/) |
+| A job that copies data abroad | [Flow checks](/developers/data-api/#flow-checks) |
+
+## Legal ground
+
+Every log pipeline, AI route, proxy route and support tool has a **legal ground for sending this data abroad**, which appears in the residency report:
+
+- Not assessed yet (the default)
+- Tokens only: counsel advises no personal data leaves
+- Adequacy decision
+- Instrument approved by your data protection authority
+- Another lawful ground for transfer
+
+Onshore doesn't choose a ground for you: record what your counsel advised.

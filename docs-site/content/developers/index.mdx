@@ -1,0 +1,51 @@
+---
+title: Developers
+description: How to integrate Onshore. Ways in, base URLs, authentication, and where to go next.
+---
+
+# Developers
+
+There are two ways to put Onshore in your data's path. Most teams use both.
+
+| | **Tokenize at the source** | **Plug in where data flows** |
+| --- | --- | --- |
+| How | Call an [SDK](/developers/sdks/) or the [data API](/developers/data-api/), or embed [secure components](/developers/secure-components/) | Point your [log collector](/developers/log-pipelines/), [AI client](/developers/ai-gateway/) or [vendor calls](/developers/http-proxy/) at Onshore |
+| Code changes | Some | None, or one URL |
+| Best for | New fields, onboarding forms, your own database | Logs, chatbots, vendor APIs, helpdesks |
+
+## Addresses
+
+Everything is served from your install's host, over HTTPS:
+
+| Path | Service |
+| --- | --- |
+| `https://<host>/v1/…` | Data API: tokenize, detokenize, records, detect, cloak |
+| `https://<host>/embed/rv.js` | Secure components script |
+| `https://<host>/control/v1/…` | Control API: configuration |
+| `https://<host>/control/scim/v2/…` | SCIM |
+| `https://<host>/logs/…` | Log processor |
+| `https://<host>/ai/<route>/v1/…` | AI gateway |
+| `https://<host>/proxy/<route>/…` | HTTP proxy |
+
+On Onshore Cloud, each region has its own names, such as `vault.gb.onshorevault.com`.
+
+## Vaults and fields
+
+Every data call names a **vault** (such as `v_live_13fcb69f22cd`; test vaults start `v_test_`) and a **field** (such as `national_id`). Find both under [Vaults](/guides/vaults/).
+
+## Next
+
+<Cards items={[
+  ["Authentication", "/developers/authentication/", "Service accounts, key pairs and short-lived tokens."],
+  ["SDKs", "/developers/sdks/", "Full references for Node.js, Python, Go, Java, PHP, the web, iOS, Android and React Native."],
+  ["Task guides", "/developers/recipes/", "Store, reveal, find, data subject requests, AI, secure components, testing and errors, step by step."],
+  ["API reference", "/api-reference/", "Every endpoint of the data, control and SCIM APIs, with schemas and a built-in client."],
+]} />
+
+## Start here
+
+1. **Get credentials.** Make a service account and key: [Authentication](/developers/authentication/).
+2. **Pick your SDK** and create a client: [Node.js](/developers/sdks/node/), [Python](/developers/sdks/python/), [Go](/developers/sdks/go/), [Java](/developers/sdks/java/), [PHP](/developers/sdks/php/).
+3. **Store your first value** in a test vault: [Store values at the source](/developers/recipes/store-values/).
+4. **Reveal it** under an access rule: [Reveal values safely](/developers/recipes/reveal-values/).
+5. **Keep forms out of your servers** with secure components: [Collect and reveal in the front end](/developers/recipes/collect-and-reveal/).

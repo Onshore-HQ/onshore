@@ -1,0 +1,47 @@
+---
+title: Cloak API
+description: Cloak text before it goes to an AI model or any outside service, keep a sealed digital twin, and restore replies.
+---
+
+# Cloak API
+
+The [AI gateway](/guides/connections/ai-gateway/) cloaks prompts for you. To cloak text yourself, for any outside service, use these endpoints.
+
+## Cloak
+
+`POST /v1/vaults/{vault}/cloak`
+
+```json
+{ "text": "Customer Sarah Johnson, 34, card 4111 1111 1111 1111, was charged £1,250.50 twice.",
+  "profile_id": "cp_…",
+  "keep_days": 7 }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `text` | Up to 256 KB |
+| `profile_id` | A saved [cloak setting](/guides/connections/ai-gateway/#cloak-settings) of this vault |
+| `options` | Or the setting inline, such as `{"person_name": "synthetic", "amount": "band"}` |
+| `keep_days` | 0 to 365. Keeps a **digital twin**: the map back to the real values, sealed in the vault |
+
+Returns the cloaked `text`, `changed` (counts by type), and `id` when a twin was kept.
+
+## Uncloak
+
+`POST /v1/vaults/{vault}/uncloak`
+
+```json
+{ "id": "twin_…", "text": "Sorry, Emma. I've flagged the duplicate charge…", "purpose": "Support chat 551" }
+```
+
+Placeholders and stand-in names are swapped back. Each kind of value comes back in full **only if your access rules allow plaintext** for it; otherwise masked. Audited like a reveal. Ranges, age bands and states aren't reversible and stay as they are.
+
+Returns `text` and `decisions` by type. 404 if the twin doesn't exist or has expired.
+
+## Delete a twin
+
+`DELETE /v1/vaults/{vault}/twins/{id}` deletes it before it expires.
+
+## Through the gateway
+
+The AI gateway returns the twin's ID in the `X-RV-Cloak-Id` response header when the route keeps twins.

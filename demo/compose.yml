@@ -1,0 +1,22 @@
+name: onshore-demo
+services:
+  lagoon-db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: lagoon, POSTGRES_PASSWORD: lagoon-demo-only, POSTGRES_DB: lagoon }
+    ports: ["127.0.0.1:55433:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]
+    mem_limit: 256m
+  analytics-db:
+    # The local stand-in for the foreign-region analytics database.
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: analytics, POSTGRES_PASSWORD: analytics-demo-only, POSTGRES_DB: analytics }
+    ports: ["127.0.0.1:55434:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]
+    mem_limit: 128m
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ["--config=/etc/otel/config.json"]
+    volumes: ["./collector/config.json:/etc/otel/config.json:ro"]
+    ports: ["127.0.0.1:4318:4318"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    mem_limit: 256m

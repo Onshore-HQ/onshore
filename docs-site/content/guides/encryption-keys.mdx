@@ -1,0 +1,31 @@
+---
+title: Encryption keys
+description: The key service, the master key, each vault's data keys, and rotating them.
+---
+
+import { Callout } from "nextra/components";
+
+# Encryption keys
+
+Each value is encrypted on its own with a **data key**. Data keys are stored only **wrapped** (encrypted) by a **master key**, which lives in the key service (OpenBao, bundled) or your own hardware security module. The database never holds a usable key.
+
+<Shot src="/screenshots/keys.png" alt="Encryption keys: key service health, Rotate master key, data keys per vault with status, algorithm, protection and age, rotation history and schedule" />
+
+## What you see
+
+- **Key service**: healthy or unavailable. If unavailable (for example sealed after a restart), nothing is decrypted, and requests fail closed.
+- **Data keys**: per vault, with status, algorithm, what protects them, and age in days.
+- **Rotation history**: every rotation, by whom and when.
+
+## Rotate
+
+- **Rotate master key** re-wraps every data key under a new master key.
+- **Rotate** on a vault's row gives it a new data key. **New writes go to the new key.** Tick **Also re-encrypt existing values now** to re-encrypt stored values too; this can take a while on large vaults.
+
+Set a **rotation schedule**: every 30, 60, 180 or 360 days, or **manual only**.
+
+Rotations are recorded in the audit log, appear in reports, and send a `key.changed` webhook.
+
+<Callout type="info">
+Unsealing the key service after a restart is done on the server by your key holders, not in the console. See [Keys and unsealing](/operate/keys/).
+</Callout>

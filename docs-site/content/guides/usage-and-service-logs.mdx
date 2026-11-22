@@ -1,0 +1,31 @@
+---
+title: Usage and service logs
+description: Measure what Onshore did over any period, and trace any single request by its ID.
+---
+
+# Usage and service logs
+
+## Usage
+
+**Usage** shows what Onshore did over any period: for sizing, budgeting and billing.
+
+<Shot src="/screenshots/usage.png" alt="Usage: values protected, shown and refused, response time, operations by result, each day, and sensitive values caught by destination" />
+
+- **Values protected**: swapped for a token before being stored or sent on.
+- **Values shown**: in full (allowed by a rule, with a reason) or masked.
+- **Requests refused**: someone asked for a value no rule allows.
+- **Response time**: how fast 95% of requests were, per service.
+- **Each day**: hover a day for its numbers.
+- **Sensitive values caught**: found on the way out, including on watch-only connections, and **where they were caught**.
+
+Times are in your organisation's time zone.
+
+## Service logs
+
+**Service logs** lists every request each service handled. When an error message shows a request ID (`req_…`), find it here.
+
+<Shot src="/screenshots/service-logs.png" alt="Service logs: filters for service, result, dates and request ID, and a table of requests with what happened and how long it took" />
+
+Filter by **service**, **result**, dates or **request ID**, page through **Newer** and **Older**, and **Download CSV**. Each request shows what happened, who did it, from which network and address, the vault, and how long it took.
+
+Service logs never hold a value: they record what happened and who did it, not the data.

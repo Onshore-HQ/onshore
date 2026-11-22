@@ -1,0 +1,42 @@
+---
+title: Redact a file
+description: Remove identifiers from a PDF, scanned image or call recording, and download a clean copy.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Redact a file
+
+Sensitive data doesn't only live in text. **Redact a file** finds identifiers in a PDF, an image or an audio recording and gives you a copy with them removed.
+
+<Shot src="/screenshots/files.png" alt="Redact a file: vault, purpose or ticket ID, and file, with Redact and download" />
+
+<Steps>
+
+### Choose the vault
+
+The vault decides which data types are looked for and which access rules apply.
+
+### Give a purpose
+
+Such as a ticket number. It's recorded in the audit log.
+
+### Choose the file
+
+Up to 64 MB. Select **Redact and download**.
+
+</Steps>
+
+| File | What happens |
+| --- | --- |
+| **PDF** | Pages are read, painted over and rebuilt, so covered text can't be copied back out |
+| **Image** | Text is read from the scan or photo, and matches are painted over |
+| **Audio** | The recording is transcribed, and segments holding identifiers are silenced |
+
+Speech and image processing run inside your install: files aren't sent to an outside service. Your own data types apply too. Every redaction is in the audit log.
+
+<Callout type="warning">
+Early access. Text and speech are redacted, but **not faces, signatures or stamps**. Poor scans are flagged as low confidence. Speech uses an English model and hasn't been tested on other languages or accents. Review results before relying on them.
+</Callout>
+
+Developers can redact files through the API or the [HTTP proxy](/guides/connections/http-proxy/). Only roles an access rule allows (`file_redact`) can use this page; by default the DPO and compliance roles.

@@ -1,0 +1,27 @@
+---
+title: Hardware security modules
+description: Keep the master key in your own HSM over PKCS#11.
+---
+
+import { Callout } from "nextra/components";
+
+# Hardware security modules
+
+Banks can keep the master key in their own HSM. Onshore talks to it over **PKCS#11**: data keys are wrapped under a key created inside the HSM, which never leaves it.
+
+1. Use the `vault-api-hsm` image, which includes PKCS#11 support.
+2. Set in `.env`:
+
+```sh
+KEY_BACKEND=pkcs11
+PKCS11_MODULE=/usr/lib/your-hsm/libpkcs11.so
+PKCS11_SLOT_LABEL=onshore
+PKCS11_PIN=…
+PKCS11_KEY_LABEL=onshore-kek
+```
+
+3. Mount the module and any client configuration your HSM vendor needs into the vault API container, and restart it.
+
+<Callout type="warning">
+Tested against SoftHSM, a software HSM. **Not yet tested on a hardware HSM.** Try it on your HSM in a test environment first.
+</Callout>

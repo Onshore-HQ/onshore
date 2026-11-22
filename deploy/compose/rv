@@ -1,0 +1,30 @@
+#!/bin/sh
+# Runs the operator tool in its container, with this directory mounted as /work.
+set -eu
+cd "$(dirname "$0")"
+case "${1:-}" in
+  init)
+    # .env does not exist yet, so Compose cannot be used for this one.
+    shift
+    exec docker run --rm -v "$PWD:/work" "${RV_REGISTRY:-rv}/tools:${RV_VERSION:-dev}" init -dir /work "$@"
+    ;;
+  verify)
+    # Check a release before loading it: signature against the key in this tool.
+    shift
+    exec docker run --rm -v "$PWD:/work" "${RV_REGISTRY:-rv}/tools:${RV_VERSION:-dev}" bundle verify /work
+    ;;
+  doctor)
+    shift
+    host="$(sed -n 's/^RV_HOST=//p' .env)"
+    # -insecure because a pilot uses Caddy's internal CA; with your own certificate
+    # the check still reports the TLS version it negotiated.
+    exec docker compose --profile tools run --rm tools doctor -url "https://${host:-localhost}" -connect edge:443 -insecure "$@"
+    ;;
+  admin-recover)
+    # The only command here that needs the database.
+    exec docker compose run --rm --no-deps migrate "$@"
+    ;;
+  *)
+    exec docker compose --profile tools run --rm tools "$@"
+    ;;
+esac

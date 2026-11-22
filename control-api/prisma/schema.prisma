@@ -1,0 +1,1164 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  previewFeatures     = ["partialIndexes"]
+  importFileExtension = "js"
+  moduleFormat        = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["control", "events"]
+}
+
+model approved_networks {
+  id        String   @id
+  tenant_id String
+  name      String
+  cidrs     String[]
+  tenants   tenants  @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, name])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model break_glass_grants {
+  id               String     @id
+  tenant_id        String
+  principal_id     String
+  vault_id         String
+  reason           String
+  requested_by     String
+  approved_by      String?
+  status           String     @default("pending")
+  duration_minutes Int
+  expires_at       DateTime?  @db.Timestamptz(6)
+  created_at       DateTime   @default(now()) @db.Timestamptz(6)
+  principals       principals @relation(fields: [principal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants          tenants    @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vaults           vaults     @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+model column_groups {
+  id           String         @id
+  vault_id     String
+  name         String
+  token_kind   String
+  token_format String
+  vaults       vaults         @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vault_fields vault_fields[]
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+model licences {
+  id          String   @id
+  tenant_id   String
+  signed_blob String
+  features    String[] @default([])
+  seats       Int?
+  expires_at  DateTime @db.Timestamptz(6)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model log_pipelines {
+  system_id String?
+  upstream_host String?
+  id              String   @id
+  vault_id        String
+  name            String
+  source_type     String
+  destination     String
+  upstream_url    String
+  entity_types    String[]
+  action_per_type Json     @default("{}")
+  sensitive_paths String[] @default([])
+  sample_rate     Float    @default(1) @db.Real
+  mode            String   @default("shadow")
+  failure_mode    String   @default("buffer")
+  ingest_key_hash String
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  transfer_basis  String   @default("not_assessed")
+  vaults          vaults   @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model policies {
+  id           String    @id
+  tenant_id    String
+  name         String
+  version      Int
+  source       Json
+  compiled_cel Json?
+  status       String    @default("draft")
+  created_by   String
+  approved_by  String?
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  published_at DateTime? @db.Timestamptz(6)
+  tenants      tenants   @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, name], map: "policies_one_active", where: raw("(status = 'active'::text)"))
+  @@unique([tenant_id, name, version])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model principals {
+  id                   String                 @id
+  tenant_id            String
+  kind                 String
+  display_name         String
+  email                String?                @unique
+  password_hash        String?
+  totp_secret_enc      String?
+  totp_last_step       BigInt?
+  mfa_enabled          Boolean                @default(false)
+  status               String                 @default("active")
+  approved_network     String?
+  last_active_at       DateTime?              @db.Timestamptz(6)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  must_change_password Boolean                @default(false)
+  sessions_valid_after DateTime?              @db.Timestamptz(6)
+  totp_pending_enc     String?
+  source               String                 @default("local")
+  external_id          String?
+  account_tokens       account_tokens[]
+  recovery_codes       recovery_codes[]
+  break_glass_grants   break_glass_grants[]
+  tenants              tenants                @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  role_assignments     role_assignments[]
+  service_account_keys service_account_keys[]
+
+  @@schema("control")
+}
+
+model role_assignments {
+  role_id      String
+  principal_id String
+  principals   principals @relation(fields: [principal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  roles        roles      @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([role_id, principal_id])
+  @@schema("control")
+}
+
+model roles {
+  id               String             @id
+  tenant_id        String
+  name             String
+  role_assignments role_assignments[]
+  tenants          tenants            @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, name])
+  @@schema("control")
+}
+
+model scope_definitions {
+  id         String   @id
+  tenant_id  String
+  version    Int
+  body       String
+  created_by String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, version])
+  @@schema("control")
+}
+
+model service_account_keys {
+  id           String     @id
+  principal_id String
+  public_key   String
+  fingerprint  String
+  ip_allowlist String[]   @default([])
+  expires_at   DateTime?  @db.Timestamptz(6)
+  last_used_at DateTime?  @db.Timestamptz(6)
+  revoked_at   DateTime?  @db.Timestamptz(6)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  principals   principals @relation(fields: [principal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tenants {
+  demo_mode Boolean @default(false)
+  map_exception_max_days Int @default(180)
+  id                             String                           @id
+  name                           String
+  plan                           String                           @default("growth")
+  deployment                     String                           @default("self_hosted")
+  hosting_facility               String?
+  hosting_country                String?                           
+  created_at                     DateTime                         @default(now()) @db.Timestamptz(6)
+  kek_rotation_days              Int?
+  audit_retention_days           Int                              @default(2557)
+  siem_url                       String?
+  siem_secret_enc                String?
+  siem_cursor                    BigInt                           @default(0)
+  metrics_key_hash               String?                          @unique(map: "tenants_metrics_key", where: raw("(metrics_key_hash IS NOT NULL)"))
+  approved_networks              approved_networks[]
+  break_glass_grants             break_glass_grants[]
+  custom_entities                custom_entities[]
+  custom_entity_publish_requests custom_entity_publish_requests[]
+  licences                       licences[]
+  policies                       policies[]
+  principals                     principals[]
+  protected_pages                protected_pages[]
+  roles                          roles[]
+  scope_definitions              scope_definitions[]
+  sso_configs                    sso_configs?
+  vaults                         vaults[]
+  webhook_endpoints              webhook_endpoints[]
+
+  home_country                   String?
+  sector                         String?
+  console_language               String                           @default("en")
+  console_format                 String?
+  laws                           String[]                         @default([])
+  markets                        String[]                         @default([])
+  planned_countries              String[]                         @default([])
+  setup_completed_at             DateTime?                        @db.Timestamptz(6)
+  time_zone                      String                           @default("UTC")
+  linked_installs                linked_installs[]
+  region_waitlist                region_waitlist[]
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model vault_fields {
+  id               String           @id
+  vault_id         String
+  name             String
+  data_type        String
+  token_kind       String           @default("deterministic")
+  token_format     String           @default("opaque")
+  column_group_id  String?
+  ttl_days         Int?
+  ttl_seconds      Int?
+  searchable       Boolean          @default(true)
+  unique_values    Boolean          @default(false)
+  mask_rule        String           @default("default")
+  in_payment_scope Boolean          @default(true)
+  created_at       DateTime         @default(now()) @db.Timestamptz(6)
+  custom_entity_id String?
+  column_groups    column_groups?   @relation(fields: [column_group_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  custom_entities  custom_entities? @relation(fields: [custom_entity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vaults           vaults           @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model vaults {
+  residency_map_enabled Boolean @default(false)
+  id                             String                           @id
+  tenant_id                      String
+  name                           String
+  environment                    String
+  status                         String                           @default("active")
+  created_at                     DateTime                         @default(now()) @db.Timestamptz(6)
+  custom_entities_enabled        Boolean                          @default(false)
+  detection_thresholds           Json                             @default("{}")
+  embed_origins                  String[]                         @default([])
+  adapters                       adapters[]
+  ai_routes                      ai_routes[]
+  cloak_profiles                 cloak_profiles[]
+  break_glass_grants             break_glass_grants[]
+  column_groups                  column_groups[]
+  custom_entities                custom_entities[]
+  custom_entity_publish_requests custom_entity_publish_requests[]
+  log_pipelines                  log_pipelines[]
+  proxy_routes                   proxy_routes[]
+  ruleset_versions               ruleset_versions?
+  vault_fields                   vault_fields[]
+  tenants                        tenants                          @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, name])
+  country                        String
+  packs                          String[]                         @default(["everywhere"])
+  time_zone                      String?
+  @@schema("control")
+}
+
+model alerts {
+  id              String    @id @db.Uuid
+  tenant_id       String
+  kind            String
+  principal_id    String?
+  detail          Json
+  event_at        DateTime  @db.Timestamptz(6)
+  raised_at       DateTime  @default(now()) @db.Timestamptz(6)
+  acknowledged_at DateTime? @db.Timestamptz(6)
+
+  @@index([tenant_id, raised_at(sort: Desc)], map: "alerts_tenant")
+  emailed_at DateTime? @db.Timestamptz(6)
+  @@schema("events")
+}
+
+model audit_checkpoints {
+  tenant_id  String
+  day        DateTime @db.Date
+  seq        BigInt
+  hash       String
+  signature  String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([tenant_id, day])
+  @@schema("events")
+}
+
+model audit_events {
+  seq            BigInt   @id @default(autoincrement())
+  event_id       String   @unique @db.Uuid
+  occurred_at    DateTime @db.Timestamptz(6)
+  tenant_id      String
+  vault_id       String?
+  principal_id   String?
+  principal_kind String?
+  source_ip      String?
+  geo_country    String?
+  network        String?
+  module         String
+  action         String
+  field_id       String?
+  record_id      String?  @db.Uuid
+  token_hash     String?
+  purpose        String?
+  decision       String?
+  policy_id      String?
+  policy_version Int?
+  break_glass    Boolean  @default(false)
+  request_id     String?
+  latency_ms     Int?
+  detail         String?
+  prev_hash      String
+  hash           String
+
+  @@index([principal_id, occurred_at(sort: Desc)], map: "audit_principal")
+  @@index([record_id], map: "audit_record")
+  @@index([tenant_id, seq], map: "audit_tenant_seq")
+  @@index([tenant_id, occurred_at(sort: Desc)], map: "audit_tenant_time")
+  @@schema("events")
+}
+
+model audit_heads {
+  tenant_id String @id
+  head_hash String
+  head_seq  BigInt @default(0)
+
+  @@schema("events")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model detection_events {
+  dest_host String?
+  flow_id String?
+  occurred_at     DateTime @db.Timestamptz(6)
+  vault_id        String
+  module          String
+  source_id       String
+  destination     String   @default("")
+  entity_type     String
+  action          String
+  count           BigInt
+  entity_version  Int?
+  ruleset_version BigInt?
+
+  @@ignore
+  @@schema("events")
+}
+
+model usage_daily {
+  vault_id           String
+  date               DateTime @db.Date
+  tokenize_count     BigInt   @default(0)
+  detokenize_count   BigInt   @default(0)
+  denied_count       BigInt   @default(0)
+  detections_by_type Json     @default("{}")
+  p95_latency_ms     Int?
+
+  @@id([vault_id, date])
+  @@schema("events")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_routes {
+  system_id String?
+  id                  String   @id
+  vault_id            String
+  name                String
+  upstream_base_url   String
+  provider            String
+  allowed_models      String[] @default([])
+  entity_types        String[] @default([])
+  restore_in_response Boolean  @default(false)
+  mode                String   @default("shadow")
+  transfer_basis      String   @default("not_assessed")
+  route_key_hash      String
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  cloak_profile_id    String?
+  twin_days           Int      @default(0)
+  vaults              vaults   @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cloak_profiles      cloak_profiles? @relation(fields: [cloak_profile_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+model cloak_profiles {
+  id         String      @id
+  vault_id   String
+  name       String
+  options    Json        @default("{}")
+  created_by String
+  created_at DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at DateTime    @default(now()) @db.Timestamptz(6)
+  vaults     vaults      @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ai_routes  ai_routes[]
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model proxy_routes {
+  system_id String?
+  id                        String   @id
+  vault_id                  String
+  name                      String
+  direction                 String   @default("inbound")
+  method                    String
+  path_pattern              String
+  upstream_url              String
+  mode                      String   @default("process_and_store")
+  redact_paths              Json     @default("[]")
+  unredact_paths            Json     @default("[]")
+  response_redact_paths     Json     @default("[]")
+  response_unredact_paths   Json     @default("[]")
+  redact_query              Json     @default("[]")
+  dlp                       Boolean  @default(true)
+  dlp_excluded_paths        String[] @default([])
+  transfer_basis            String   @default("not_assessed")
+  route_key_hash            String
+  created_at                DateTime @default(now()) @db.Timestamptz(6)
+  redact_headers            Json     @default("[]")
+  unredact_headers          Json     @default("[]")
+  response_redact_headers   Json     @default("[]")
+  response_unredact_headers Json     @default("[]")
+  dlp_excluded_headers      String[] @default([])
+  dlp_excluded_params       String[] @default([])
+  file_policy               String   @default("refuse")
+  vaults                    vaults   @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model adapters {
+  id                  String   @id
+  vault_id            String
+  name                String
+  kind                String
+  base_url            String
+  api_credential_enc  String
+  webhook_secret_hash String
+  webhook_secret_enc  String
+  mode                String   @default("shadow")
+  transfer_basis      String   @default("not_assessed")
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  vaults              vaults   @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([vault_id, name])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sso_configs {
+  tenant_id         String   @id
+  kind              String
+  email_domains     String[]
+  issuer            String?
+  client_id         String?
+  client_secret_enc String?
+  idp_sso_url       String?
+  idp_cert          String?
+  sp_entity_id      String?
+  idp_enforces_mfa  Boolean  @default(false)
+  sso_only          Boolean  @default(false)
+  jit_provisioning  Boolean  @default(false)
+  groups_attribute  String?
+  scopes            String   @default("openid email profile")
+  provider          String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  tenants           tenants  @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+model sso_states {
+  state_hash String   @id
+  tenant_id  String
+  nonce      String
+  verifier   String
+  expires_at DateTime @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model audit_anchors {
+  tenant_id      String   @id
+  seq            BigInt
+  hash           String
+  events_removed BigInt   @default(0)
+  purged_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("events")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model custom_entities {
+  id                             String                          @id
+  pack_id                        String?
+  pack_version                   Int?
+  tenant_id                      String
+  vault_id                       String
+  name                           String
+  slug                           String
+  kind                           String
+  definition                     Json
+  validator                      Json?
+  context_positive               String[]                        @default([])
+  context_negative               String[]                        @default([])
+  threshold                      Decimal                         @default(0.70) @db.Decimal(3, 2)
+  token_kind                     String                          @default("deterministic")
+  token_format                   String                          @default("opaque")
+  mask_rule                      Json                            @default("{\"n\": 4, \"type\": \"last_n\"}")
+  actions                        Json
+  status                         String                          @default("draft")
+  version                        Int                             @default(0)
+  draft                          Json?
+  list_version                   Int                             @default(0)
+  staged_list_version            Int?
+  created_by                     String
+  approved_by                    String?
+  edited_by                      String
+  published_at                   DateTime?                       @db.Timestamptz(6)
+  created_at                     DateTime                        @default(now()) @db.Timestamptz(6)
+  updated_at                     DateTime                        @default(now()) @db.Timestamptz(6)
+  tenants                        tenants                         @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vaults                         vaults                          @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  custom_entity_lists            custom_entity_lists[]
+  custom_entity_publish_requests custom_entity_publish_requests?
+  custom_entity_tests            custom_entity_tests[]
+  custom_entity_uploads          custom_entity_uploads[]
+  custom_entity_values           custom_entity_values[]
+  custom_entity_versions         custom_entity_versions[]
+  vault_fields                   vault_fields[]
+
+  @@unique([vault_id, slug])
+  @@index([vault_id, status], map: "custom_entities_vault")
+  @@schema("control")
+}
+
+model custom_entity_lists {
+  entity_id       String
+  list_version    Int
+  value_count     Int
+  max_words       Int
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  custom_entities custom_entities @relation(fields: [entity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([entity_id, list_version])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model custom_entity_publish_requests {
+  id              String          @id
+  tenant_id       String
+  vault_id        String
+  entity_id       String          @unique(map: "custom_entity_one_pending", where: raw("(status = 'pending'::text)"))
+  version         Int
+  snapshot        Json
+  benchmark       Json
+  status          String          @default("pending")
+  requested_by    String
+  decided_by      String?
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  decided_at      DateTime?       @db.Timestamptz(6)
+  custom_entities custom_entities @relation(fields: [entity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants         tenants         @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vaults          vaults          @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+model custom_entity_tests {
+  id                String          @id
+  entity_id         String
+  sample_ciphertext Bytes
+  sample_nonce      Bytes
+  dek_id            String
+  expect_match      Boolean
+  created_by        String
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+  custom_entities   custom_entities @relation(fields: [entity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([entity_id], map: "custom_entity_tests_entity")
+  @@schema("control")
+}
+
+model custom_entity_uploads {
+  id              String          @id
+  entity_id       String
+  ciphertext      Bytes
+  nonce           Bytes
+  dek_id          String
+  expires_at      DateTime        @db.Timestamptz(6)
+  custom_entities custom_entities @relation(fields: [entity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+model custom_entity_values {
+  entity_id         String
+  list_version      Int
+  index_key_version Int             @default(1)
+  value_hmac        Bytes
+  custom_entities   custom_entities @relation(fields: [entity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([entity_id, list_version, value_hmac])
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model custom_entity_versions {
+  entity_id       String
+  version         Int
+  snapshot        Json
+  published_by    String
+  approved_by     String
+  published_at    DateTime        @default(now()) @db.Timestamptz(6)
+  benchmark       Json?
+  custom_entities custom_entities @relation(fields: [entity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([entity_id, version])
+  @@schema("control")
+}
+
+model ruleset_versions {
+  vault_id String @id
+  version  BigInt
+  vaults   vaults @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("control")
+}
+
+model monitor_state {
+  component  String   @id
+  status     String
+  failures   Int      @default(0)
+  since      DateTime @default(now()) @db.Timestamptz(6)
+  checked_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model webhook_deliveries {
+  id                String            @id @db.Uuid
+  endpoint_id       String
+  tenant_id         String
+  event_id          String
+  event_type        String
+  payload           Json
+  status            String            @default("pending")
+  attempts          Int               @default(0)
+  next_attempt_at   DateTime          @default(now()) @db.Timestamptz(6)
+  last_status       Int?
+  last_error        String?
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  delivered_at      DateTime?         @db.Timestamptz(6)
+  webhook_endpoints webhook_endpoints @relation(fields: [endpoint_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([endpoint_id, event_id])
+  @@index([created_at], map: "webhook_deliveries_age")
+  @@index([next_attempt_at], map: "webhook_deliveries_due", where: raw("(status = 'pending'::text)"))
+  @@index([endpoint_id, created_at(sort: Desc)], map: "webhook_deliveries_recent")
+  @@schema("control")
+}
+
+model webhook_endpoints {
+  id                   String               @id
+  tenant_id            String
+  url                  String
+  description          String               @default("")
+  event_types          String[]
+  secret_enc           String
+  secret_prev_enc      String?
+  secret_prev_until    DateTime?            @db.Timestamptz(6)
+  enabled              Boolean              @default(true)
+  disabled_reason      String?
+  audit_cursor         BigInt               @default(0)
+  alert_cursor         DateTime             @default(now()) @db.Timestamptz(6)
+  consecutive_failures Int                  @default(0)
+  last_success_at      DateTime?            @db.Timestamptz(6)
+  last_failure_at      DateTime?            @db.Timestamptz(6)
+  created_by           String?
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  webhook_deliveries   webhook_deliveries[]
+  tenants              tenants              @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tenant_id], map: "webhook_endpoints_tenant")
+  @@schema("control")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model page_scripts {
+  id              String          @id
+  page_id         String
+  tenant_id       String
+  script_url      String
+  source          String
+  status          String          @default("pending")
+  justification   String?
+  decided_by      String?
+  decided_at      DateTime?       @db.Timestamptz(6)
+  first_seen      DateTime        @default(now()) @db.Timestamptz(6)
+  last_seen       DateTime        @default(now()) @db.Timestamptz(6)
+  seen_count      BigInt          @default(1)
+  content_hash    String?
+  hash_checked_at DateTime?       @db.Timestamptz(6)
+  hash_changed_at DateTime?       @db.Timestamptz(6)
+  hash_error      String?
+  notified_at     DateTime?       @db.Timestamptz(6)
+  protected_pages protected_pages @relation(fields: [page_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([page_id, script_url])
+  @@index([page_id, first_seen], map: "page_scripts_recent")
+  @@schema("control")
+}
+
+model protected_pages {
+  id               String         @id
+  tenant_id        String
+  name             String
+  page_url         String
+  origin           String
+  report_key       String         @unique
+  created_by       String?
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  last_report_at   DateTime?      @db.Timestamptz(6)
+  last_scan_at     DateTime?      @db.Timestamptz(6)
+  last_scan_error  String?
+  flood_alerted_at DateTime?      @db.Timestamptz(6)
+  page_scripts     page_scripts[]
+  tenants          tenants        @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tenant_id], map: "protected_pages_tenant")
+  @@schema("control")
+}
+
+// Update Spec 02: the residency map. Queried with SQL in src/map and src/routes/map.ts.
+model vendors {
+  id         String   @id
+  tenant_id  String?
+  name       String
+  category   String
+  hostnames  String[]
+  regions    Json     @default("[]")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model systems {
+  id                 String    @id
+  tenant_id          String
+  vault_id           String
+  name               String
+  kind               String
+  vendor_id          String?
+  vendor_region      String?
+  hosting_country    String?
+  hosting_facility   String?
+  host               String?
+  owner_id           String?
+  entity_types       String[]  @default([])
+  managed_by_onshore Boolean   @default(false)
+  source_ref         Json?
+  route_mode         String?
+  route_mode_since   DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  retired_at         DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model system_history {
+  seq         BigInt   @id @default(autoincrement())
+  system_id   String
+  occurred_at DateTime @default(now()) @db.Timestamptz(6)
+  kind        String
+  detail      Json
+  actor_id    String?
+
+  @@schema("control")
+}
+
+model data_flows {
+  id                  String    @id
+  tenant_id           String
+  vault_id            String
+  source_system_id    String
+  dest_system_id      String?
+  dest_vendor_id      String?
+  dest_region         String?
+  dest_host           String?
+  dest_country        String?
+  dest_country_source String    @default("unconfirmed")
+  dest_ip_hint        String?
+  entity_types        String[]  @default([])
+  in_scope        Boolean   @default(true)
+  origin              String
+  via_system_id       String?
+  route_source_id     String?
+  status              String    @default("unverified")
+  status_since        DateTime  @default(now()) @db.Timestamptz(6)
+  owner_id            String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  retired_at          DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model flow_status_events {
+  seq         BigInt   @id @default(autoincrement())
+  flow_id     String
+  occurred_at DateTime @default(now()) @db.Timestamptz(6)
+  from_status String?
+  to_status   String
+  cause       String
+  evidence    Json?
+  actor_id    String?
+
+  @@schema("control")
+}
+
+model flow_observations_daily {
+  flow_id         String
+  day             DateTime @db.Date
+  entity_type     String
+  protected_count BigInt   @default(0)
+  passed_count    BigInt   @default(0)
+  ruleset_version BigInt?
+
+  @@id([flow_id, day, entity_type])
+  @@schema("control")
+}
+
+model flow_exceptions {
+  id                    String    @id
+  flow_id               String
+  reason                String
+  compensating_controls String?
+  requested_by          String
+  requested_at          DateTime  @default(now()) @db.Timestamptz(6)
+  approved_by           String?
+  approved_at           DateTime? @db.Timestamptz(6)
+  revoked_by            String?
+  revoked_at            DateTime? @db.Timestamptz(6)
+  expires_at            DateTime  @db.Date
+  status                String    @default("pending")
+  expiry_warned         Boolean   @default(false)
+
+  @@schema("control")
+}
+
+model remediation_actions {
+  id             String    @id
+  flow_id        String
+  plan           String
+  description    String?
+  owner_id       String
+  due_date       DateTime  @db.Date
+  status         String    @default("open")
+  evidence       Json?
+  evidence_files Json?
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at   DateTime? @db.Timestamptz(6)
+  completed_by   String?
+  overdue_warned Boolean   @default(false)
+
+  @@schema("control")
+}
+
+model map_scores_daily {
+  vault_id                      String
+  day                           DateTime @db.Date
+  flow_score                    Decimal? @db.Decimal(5, 2)
+  flow_score_without_exceptions Decimal? @db.Decimal(5, 2)
+  volume_score                  Decimal? @db.Decimal(5, 2)
+  counts                        Json     @default("{}")
+
+  @@id([vault_id, day])
+  @@schema("control")
+}
+
+model mail_settings {
+  tenant_id      String    @id
+  host           String
+  port           Int
+  tls_mode       String
+  username       String?
+  password_enc   String?
+  from_address   String
+  from_name      String    @default("Onshore")
+  console_url    String
+  alerts_enabled Boolean   @default(true)
+  verified_at    DateTime? @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model account_tokens {
+  id           String     @id
+  tenant_id    String
+  principal_id String
+  kind         String
+  token_hash   String     @unique
+  created_by   String?
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  expires_at   DateTime   @db.Timestamptz(6)
+  used_at      DateTime?  @db.Timestamptz(6)
+  revoked_at   DateTime?  @db.Timestamptz(6)
+  principals   principals @relation(fields: [principal_id], references: [id], onDelete: Cascade)
+
+  @@schema("control")
+}
+
+model recovery_codes {
+  id           String     @id
+  principal_id String
+  code_hash    String
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  used_at      DateTime?  @db.Timestamptz(6)
+  principals   principals @relation(fields: [principal_id], references: [id], onDelete: Cascade)
+
+  @@schema("control")
+}
+
+model api_keys {
+  id           String    @id
+  tenant_id    String
+  name         String
+  key_hash     String    @unique
+  scopes       String[]
+  created_by   String
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at   DateTime? @db.Timestamptz(6)
+  last_used_at DateTime? @db.Timestamptz(6)
+  revoked_at   DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model import_jobs {
+  id              String    @id
+  tenant_id       String
+  vault_id        String
+  file_name       String
+  mapping         Json
+  ref_column      String?
+  status          String    @default("running")
+  rows_done       BigInt    @default(0)
+  rows_failed     BigInt    @default(0)
+  values_new      BigInt    @default(0)
+  values_existing BigInt    @default(0)
+  created_by      String
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at     DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+
+model linked_installs {
+  id              String    @id
+  tenant_id       String
+  country         String
+  name            String
+  status          String    @default("pending")
+  join_code_hash  String?   @unique
+  join_expires_at DateTime? @db.Timestamptz(6)
+  secret_enc      String?
+  base_url        String?
+  version         String?
+  summary         Json      @default("{}")
+  last_seen_at    DateTime? @db.Timestamptz(6)
+  created_by      String
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  joined_at       DateTime? @db.Timestamptz(6)
+  revoked_at      DateTime? @db.Timestamptz(6)
+  tenants         tenants   @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tenant_id])
+  @@schema("control")
+}
+
+model federation {
+  id             Boolean   @id @default(true)
+  primary_url    String
+  install_id     String
+  secret_enc     String
+  joined_at      DateTime  @default(now()) @db.Timestamptz(6)
+  last_report_at DateTime? @db.Timestamptz(6)
+  last_error     String?
+
+  @@schema("control")
+}
+
+model region_waitlist {
+  tenant_id    String
+  country      String
+  requested_by String
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  notified_at  DateTime? @db.Timestamptz(6)
+  tenants      tenants   @relation(fields: [tenant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([tenant_id, country])
+  @@schema("control")
+}
+
+model group_role_mappings {
+  tenant_id  String
+  group_name String
+  roles      String[]
+  created_by String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([tenant_id, group_name])
+  @@schema("control")
+}
+
+model scim_tokens {
+  id           String    @id
+  tenant_id    String
+  name         String
+  token_hash   String    @unique
+  created_by   String
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  last_used_at DateTime? @db.Timestamptz(6)
+  revoked_at   DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model scim_groups {
+  id           String               @id
+  tenant_id    String
+  display_name String
+  external_id  String?
+  created_at   DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime             @default(now()) @db.Timestamptz(6)
+  members      scim_group_members[]
+
+  @@schema("control")
+}
+
+model scim_group_members {
+  group_id     String
+  principal_id String
+  group        scim_groups @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@id([group_id, principal_id])
+  @@schema("control")
+}
+
+model ldap_configs {
+  tenant_id         String   @id
+  url               String
+  start_tls         Boolean  @default(false)
+  ca_cert           String?
+  bind_dn           String
+  bind_password_enc String
+  base_dn           String
+  user_filter       String   @default("(&(objectClass=person)(mail={email}))")
+  group_base_dn     String?
+  group_filter      String   @default("(&(objectClass=groupOfNames)(member={dn}))")
+  email_domains     String[]
+  jit_provisioning  Boolean  @default(false)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model webauthn_credentials {
+  id           String    @id
+  principal_id String
+  public_key   Bytes
+  counter      BigInt    @default(0)
+  transports   String[]  @default([])
+  name         String
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  last_used_at DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model auth_challenges {
+  id           String   @id
+  principal_id String
+  kind         String
+  challenge    String
+  expires_at   DateTime @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model custom_packs {
+  id            String    @id
+  tenant_id     String
+  country       String
+  name          String
+  description   String    @default("")
+  version       Int       @default(1)
+  data_types    Json      @default("[]")
+  laws          Json      @default("[]")
+  origin        String    @default("own")
+  imported_from Json?
+  created_by    String
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+  archived_at   DateTime? @db.Timestamptz(6)
+
+  @@schema("control")
+}
+
+model pack_signing_keys {
+  tenant_id       String   @id
+  public_key      String
+  private_key_enc String
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("control")
+}

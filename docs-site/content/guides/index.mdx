@@ -1,0 +1,27 @@
+---
+title: Use the console
+description: A guide to every screen in the Onshore console, with what it's for and how to do each task.
+---
+
+# Use the console
+
+These guides follow the console's menu. Each page explains what the screen is for, who uses it, and how to do each task, step by step. If you're new, read the [console tour](/get-started/console-tour/) first.
+
+<Cards items={[
+  ["Home", "/guides/home/", "What needs your attention, setup progress, and what was caught before leaving the country."],
+  ["Residency map", "/guides/residency-map/", "Every system and vendor that holds your data, with each flow's status worked out from evidence."],
+  ["Connections", "/guides/connections/", "Logs, AI tools, vendor APIs, support tools and pages going through Onshore."],
+  ["Data types", "/guides/data-types/", "What counts as sensitive: built-in types, your own, templates and country packs."],
+  ["Vaults", "/guides/vaults/", "Where real values are kept, and how each kind is tokenized and masked."],
+  ["Customer records", "/guides/customer-records/", "Find a person, see who looked at their data, export or erase it."],
+  ["People and roles", "/guides/people-and-roles/", "Team members, service accounts, roles and what each can do."],
+  ["Access rules", "/guides/access-rules/", "Who can see real values, masked values or nothing, and when."],
+  ["Reports", "/guides/reports/", "Signed evidence for regulators, auditors and partner banks."],
+  ["Audit log", "/guides/audit-log/", "Who did what, when, and with what result."],
+  ["Encryption keys", "/guides/encryption-keys/", "The master key, data keys and rotation."],
+  ["Settings", "/guides/settings/", "Organisation, locations and laws, sign-in, email, copying setup and audit retention."],
+]} />
+
+## Who can do what
+
+What you see depends on your [role](/guides/people-and-roles/#roles). Admins configure everything but, by default, **can't see real customer values**: only roles that an access rule allows can reveal them.

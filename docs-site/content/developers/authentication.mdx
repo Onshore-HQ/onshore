@@ -1,0 +1,119 @@
+---
+title: Authentication
+description: Service accounts sign a short assertion with their private key and exchange it for a 15-minute token. The private key never leaves your server.
+---
+
+import { Callout, Steps, Tabs } from "nextra/components";
+
+# Authentication
+
+Your systems call Onshore as **service accounts**. A service account has an **Ed25519 key pair**: you keep the private key on your server, and Onshore holds only the public key.
+
+<Steps>
+
+### Make a key pair
+
+```sh
+./rv sa-keygen
+```
+
+It prints a public key and writes the private key (a seed) for your server. Keep the private key in your secret manager.
+
+### Add the service account
+
+In the console, **People → Add a person or service account → Service account**. Give it a name, roles (usually `backend_service`), the **public key**, and optionally an **IP allowlist**. Note its **service account ID** and **key ID**.
+
+### Let it act
+
+The `backend-services` starter rule lets `backend_service` store, insert, search and redact files. To reveal values, add an [access rule](/guides/access-rules/) for its role.
+
+</Steps>
+
+## How a call is authenticated
+
+The SDKs do this for you:
+
+1. Build a **signed assertion**: a JWT signed with EdDSA, with `iss` and `sub` set to the service account ID, `aud` set to `onshore`, a unique `jti`, an expiry within 5 minutes, and the key ID in the `kid` header.
+2. `POST /v1/auth/token` with `{"assertion": "…"}`. Each assertion works **once**.
+3. You get a **bearer token** valid for 15 minutes. Send it as `Authorization: Bearer …`.
+
+| Response | Means |
+| --- | --- |
+| 200 | Token issued |
+| 401 | Signature, audience, expiry or replay check failed |
+| 403 | Your source IP isn't on the key's allowlist |
+
+<Callout type="warning">
+Never put a private key in a browser or mobile app. Apps use single-use **client tokens** minted by your server. See [Collect and reveal in the front end](/developers/recipes/collect-and-reveal/).
+</Callout>
+
+## Signing an assertion yourself
+
+Only needed in a language without an SDK, or to try the [API reference](/api-reference/) by hand. The assertion is a standard JWT with EdDSA; any JWT library that supports Ed25519 works.
+
+| Part | Value |
+| --- | --- |
+| Header | `{"alg": "EdDSA", "typ": "JWT", "kid": "<key id>"}` |
+| `iss`, `sub` | The service account ID |
+| `aud` | `onshore` |
+| `jti` | A new random value each time |
+| `iat` | Now, in Unix seconds |
+| `exp` | At most 5 minutes after `iat` (the SDKs use 2) |
+
+<Tabs items={["Node.js (no SDK)", "Python (PyJWT)", "Shell"]}>
+<Tabs.Tab>
+```js
+import crypto from "node:crypto";
+
+const seed = Buffer.from(process.env.ONSHORE_PRIVATE_KEY, "base64");
+const key = crypto.createPrivateKey({
+  key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]), // PKCS#8 wrapper for an Ed25519 seed
+  format: "der", type: "pkcs8",
+});
+const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const now = Math.floor(Date.now() / 1000);
+const unsigned = `${b64u({ alg: "EdDSA", typ: "JWT", kid: process.env.ONSHORE_KEY_ID })}.${b64u({
+  iss: process.env.ONSHORE_SA_ID, sub: process.env.ONSHORE_SA_ID, aud: "onshore",
+  jti: crypto.randomUUID(), iat: now, exp: now + 120,
+})}`;
+const assertion = `${unsigned}.${crypto.sign(null, Buffer.from(unsigned), key).toString("base64url")}`;
+
+const r = await fetch(`${process.env.ONSHORE_URL}/v1/auth/token`, {
+  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assertion }),
+});
+const { access_token, expires_in } = await r.json(); // use as "Authorization: Bearer …" for 15 minutes
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```python
+import base64, os, time, uuid, jwt, requests
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+key = Ed25519PrivateKey.from_private_bytes(base64.b64decode(os.environ["ONSHORE_PRIVATE_KEY"]))
+now = int(time.time())
+assertion = jwt.encode(
+    {"iss": os.environ["ONSHORE_SA_ID"], "sub": os.environ["ONSHORE_SA_ID"], "aud": "onshore",
+     "jti": str(uuid.uuid4()), "iat": now, "exp": now + 120},
+    key, algorithm="EdDSA", headers={"kid": os.environ["ONSHORE_KEY_ID"]},
+)
+token = requests.post(f"{os.environ['ONSHORE_URL']}/v1/auth/token", json={"assertion": assertion}).json()["access_token"]
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```sh
+# The rv command signs an assertion and prints a bearer token
+TOKEN=$(./rv token --sa "$ONSHORE_SA_ID" --key-id "$ONSHORE_KEY_ID" --key-file ./sa.key)
+curl -s "$ONSHORE_URL/v1/vaults/v_test_01/lookup" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"field":"email","value":"sam@example.com"}'
+```
+</Tabs.Tab>
+</Tabs>
+
+## Rotating and revoking
+
+Add a new key to the service account, switch your server to it, then revoke the old one on the person's page. A revoked key stops working at once. Suspending the service account stops all its keys.
+
+## Rate limits on failures
+
+Repeated authentication failures from one address are slowed (120 a minute by default, set by `RV_AUTH_FAILURES_PER_MINUTE`).

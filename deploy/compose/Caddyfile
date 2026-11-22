@@ -1,0 +1,102 @@
+{
+	admin off
+	auto_https disable_redirects
+}
+
+(internal_tls) {
+	transport http {
+		tls
+		tls_trust_pool file /tls/ca.pem
+		tls_client_auth /tls/cert.pem /tls/key.pem
+	}
+}
+
+{$RV_HOST:localhost} {
+	tls {$RV_TLS:internal} {
+		protocols tls1.3
+	}
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+		-Alt-Svc
+	}
+
+	# Only the console's proxy may name the module recorded in the audit log.
+	request_header -X-RV-Module
+
+	# The internal API is never reachable from outside, on any service.
+	handle /internal/* {
+		respond "not found" 404
+	}
+	handle /files/internal/* {
+		respond "not found" 404
+	}
+	handle /healthz {
+		reverse_proxy https://vault-api:8080 {
+			import internal_tls
+		}
+	}
+	handle /v1/* {
+		reverse_proxy https://vault-api:8080 {
+			import internal_tls
+		}
+	}
+	# Secure components: served by the customer's own install, never from a CDN.
+	handle /embed/* {
+		reverse_proxy https://vault-api:8080 {
+			import internal_tls
+		}
+	}
+	handle_path /control/* {
+		reverse_proxy https://control-api:8081 {
+			import internal_tls
+		}
+	}
+	handle_path /logs/* {
+		reverse_proxy https://log-processor:8090 {
+			import internal_tls
+		}
+	}
+	handle_path /support/* {
+		reverse_proxy https://adapters:8093 {
+			import internal_tls
+		}
+	}
+	handle_path /files/* {
+		request_body {
+			max_size 64MB
+		}
+		reverse_proxy https://file-redactor:8094 {
+			import internal_tls
+		}
+	}
+	# OTLP over gRPC; the service path is fixed by the protocol.
+	handle /opentelemetry.proto.collector.* {
+		reverse_proxy https://log-processor:8090 {
+			transport http {
+				versions 2
+				tls
+				tls_trust_pool file /tls/ca.pem
+				tls_client_auth /tls/cert.pem /tls/key.pem
+			}
+		}
+	}
+	handle_path /ai/* {
+		reverse_proxy https://ai-gateway:8091 {
+			import internal_tls
+			flush_interval -1
+		}
+	}
+	handle_path /proxy/* {
+		reverse_proxy https://http-proxy:8092 {
+			import internal_tls
+		}
+	}
+	handle {
+		reverse_proxy https://console:3000 {
+			import internal_tls
+		}
+	}
+}

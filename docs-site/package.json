@@ -1,0 +1,28 @@
+{
+  "name": "@onshore/docs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 4120",
+    "build": "next build",
+    "postbuild": "pagefind --site out --output-path out/_pagefind",
+    "preview": "python3 -m http.server 4120 -d out",
+    "screenshots": "node scripts/screenshots.mjs",
+    "predev": "node scripts/copy-scalar.mjs",
+    "prebuild": "node scripts/copy-scalar.mjs"
+  },
+  "dependencies": {
+    "next": "15.5.28",
+    "nextra": "4.6.1",
+    "nextra-theme-docs": "4.6.1",
+    "react": "19.1.10",
+    "react-dom": "19.1.10"
+  },
+  "devDependencies": {
+    "@scalar/api-reference": "1.77.0",
+    "pagefind": "1.5.2"
+  },
+  "overrides": {
+    "zod": "4.1.13"
+  }
+}

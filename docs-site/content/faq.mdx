@@ -1,0 +1,54 @@
+---
+title: FAQ
+description: Common questions about Onshore, for decision-makers, admins and developers.
+---
+
+# FAQ
+
+## About the product
+
+**Does Onshore make us compliant?**
+No product can do that alone. Onshore gives you controls and evidence; your counsel decides what your obligations are.
+
+**Do we still need a database in the country?**
+Usually, where a local rule requires it. Onshore handles identifiers and the flows around your database; the rest of your data still needs a home in the country.
+
+**What happens to our tools abroad?**
+They keep working, on tokens. Log searches still work with "same value, same token" fields; AI models reason about placeholders; helpdesks show tokens or masked values with a reveal for permitted agents.
+
+**Which countries are supported?**
+18 have built-in packs; every other country can have a vault and your own country pack. See [Countries](/countries/).
+
+**Is it open source?**
+Yes. Free is fully self-hosted. Enterprise adds linked installs, single sign-on, SCIM, LDAP and support. Onshore Cloud is run by us.
+
+**Does it phone home?**
+No. Self-hosted installs use an offline licence, and services reach only the destinations you configure.
+
+## Admins
+
+**Can admins see customer values?**
+Not by default. Only roles an access rule allows can reveal values. The starter rules let the DPO reveal, with multi-factor sign-in and a purpose.
+
+**What if we lose the key shares?**
+If three or more of the five are lost, stored values can never be decrypted again. Keep them safe and apart.
+
+**How do we remove someone's access quickly?**
+Suspend them on the People page, or with SCIM, deactivate them at your identity provider: their sessions end at once.
+
+**Can we try it safely?**
+Yes: use a test vault with made-up data, and keep every connection in watch only until you trust the counts.
+
+## Developers
+
+**Which languages have SDKs?**
+Node.js, Python, Go, Java and PHP on the server; web, iOS, Android and React Native for secure components.
+
+**Do we need to change our app to protect logs?**
+No. Change one output in your log collector.
+
+**What if Onshore is down?**
+Detokenize fails closed. Logs buffer in your collector and retry (if you choose that). Nothing unprotected is forwarded while protecting.
+
+**Can tokens look like real values?**
+Yes, with format-preserving tokens, for old systems that check length. Prefer opaque tokens otherwise.

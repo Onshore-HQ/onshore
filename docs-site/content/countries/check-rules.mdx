@@ -1,0 +1,47 @@
+---
+title: Check rules
+description: The validators a pattern's match must pass, from a fixed menu. Length, prefixes, Luhn, mod 11, mod 97, check letters and dates inside numbers.
+---
+
+import { Callout } from "nextra/components";
+
+# Check rules
+
+A **check rule** (validator) is a test a pattern's match must pass, such as an ID's check digit. You choose from a fixed menu; nobody can supply their own code, which keeps the engine safe. Use them in [your own data types](/guides/data-types/) and [country packs](/guides/country-packs/).
+
+## Soft and definitive
+
+- **Soft rules** add confidence when they pass (0.6 becomes 0.9). When they fail, the match keeps 0.6, so words nearby can still lift it over the threshold.
+- **Definitive rules** rule a match **out** when they fail, whatever words are nearby. A wrong check letter means it isn't that ID.
+
+## The menu
+
+| Rule | Kind | What it checks | Settings |
+| --- | --- | --- | --- |
+| **Exact length** | Soft | The match has exactly this many characters | Length |
+| **Prefix list** | Soft | It starts with one of these | Prefixes |
+| **Luhn** | Soft | The Luhn check used by card numbers and many IDs | — |
+| **Mod 11** | Soft | Weights 2 to 7 repeating from the right; the last digit is 11 minus the remainder | — |
+| **Custom checksum** | Soft | Digits times your weights; the check digit at a position is the modulus minus the remainder | Weights, modulus, check position |
+| **Mod 11 with your weights** | Definitive | Digits times your weights. The check is 11 minus the remainder (most schemes) or the remainder itself. 10 is written `X`, 11 is `0` | Weights, which form, check position |
+| **Mod 97** | Definitive | ISO 7064 mod 97-10, as IBANs use: move characters from the start to the end, turn letters into numbers (A=10 … Z=35), and the whole must leave 1 | Characters to move (4 for an IBAN) |
+| **Check letter** | Definitive | Digits times weights, plus a number, modulo the alphabet's length, picks the letter at a position | Weights, letters in order, number added, letter position |
+| **A real date inside the number** | Definitive | Digits from a position hold a real calendar date | Layout (YYMMDD, YYYYMMDD, DDMMYY, DDMMYYYY, MMDDYY), start position counting digits only |
+
+Spaces, dashes and dots are ignored. Positions count from 1; 0 or -1 means the last character.
+
+## Worked examples
+
+**Spain's DNI** (`12345678Z`): 8 digits and a letter, the number modulo 23 picking from `TRWAGMYFPDXBNJZSQVHLCKE`. As a check letter rule: letters `TRWAGMYFPDXBNJZSQVHLCKE`, weights `14,6,19,18,11,8,10,1` (powers of 10 modulo 23), number added 0, letter position 0.
+
+**Singapore's NRIC** (`S1234567D`): weights `2,7,6,5,4,3,2` over the 7 digits, letters `JZIHGFEDCBA`, position 0.
+
+**An IBAN**: mod 97, characters to move 4.
+
+**An ISBN-10** (`0-306-40615-2`, or ending `X`): mod 11 with weights `10,9,8,7,6,5,4,3,2`, form "11 minus the remainder".
+
+**A birth date inside an ID** (`8001015009087`): date layout YYMMDD from digit 1. Two-digit years are checked against 2000+, so 29 February 2000 passes and 29 February 2001 doesn't.
+
+<Callout type="info">
+Test each rule with made-up examples that must match and must not match. The pack and data type builders run them for you.
+</Callout>

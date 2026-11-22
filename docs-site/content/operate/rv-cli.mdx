@@ -1,0 +1,32 @@
+---
+title: The rv tool
+description: Every rv operator command, from init to imports and admin recovery.
+---
+
+# The rv tool
+
+`rv` is the operator tool, in the `tools` image and as `./rv` in `deploy/compose`.
+
+| Command | Does |
+| --- | --- |
+| `rv init [--host] [--country] [--license file] [--join code --primary url]` | Write `.env` with generated secrets; print the bootstrap token |
+| `rv migrate` | Apply database migrations (`DATABASE_URL`) |
+| `rv keys init` | Initialise the key service: 5 shares, any 3 unseal |
+| `rv keys unseal` | Enter an unseal share (three holders, one each) |
+| `rv keys status` | Show whether the key service is sealed |
+| `rv doctor [-env .env]` | Pass or fail report for your change ticket |
+| `rv scan <file \| ->` | Offline leak report for a log file. Changes nothing. `--packs gb,eu` narrows countries |
+| `rv sa-keygen` | Make a service account key pair |
+| `rv import …` | Load a CSV of existing data into a vault and write tokens. `-check` stores nothing. See [Import existing data](/guides/import-data/) |
+| `rv admin-recover -email <address> -reason "…"` | A one-time link for a locked-out admin. Needs database access; leaves a permanent audit entry |
+| `rv support-bundle` | Versions, configuration without secrets, and redacted logs, to send to support |
+| `rv bundle verify` | Check a release's signed checksums before installing |
+| `rv license verify` | Check a licence file |
+
+## rv scan
+
+```sh
+rv scan /var/log/app.log
+```
+
+Reports how many lines contain identifiers that would leave the country as written, by type, with masked samples safe to share. It reads no database or bucket.

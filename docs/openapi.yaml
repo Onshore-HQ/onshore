@@ -1,0 +1,681 @@
+openapi: 3.1.0
+info:
+  title: Onshore Data API
+  version: 0.1.0
+  summary: "Store sensitive values in their country, hand out tokens, and reveal values only as access rules allow."
+  description: |
+    The data API is served by the vault, at `https://<your-host>`. It stores values, returns tokens,
+    reveals values under access rules, finds identifiers in text, cloaks text for AI models, and
+    answers yes-or-no questions about stored values without letting them leave the country.
+
+    ## Authentication
+
+    Every call except `POST /v1/auth/token` and `GET /healthz` needs `Authorization: Bearer <token>`.
+    Service accounts get a token by signing a short assertion with their Ed25519 private key and
+    exchanging it at `POST /v1/auth/token`. Tokens last 15 minutes. The SDKs do this for you.
+
+    ## Errors
+
+    Errors have one shape: `{"error": {"code", "message", "policy"}, "request_id"}`. Messages never
+    contain a sensitive value. Quote `request_id` when asking for help.
+
+    ## Batches
+
+    Tokenize and detokenize take up to 500 items. By default the whole batch fails on the first bad
+    item; set `continue_on_error` to get a result per item instead.
+
+    ## Purposes
+
+    Every reveal, export and erasure needs a purpose: a reason, such as a ticket number, recorded in
+    the audit log. Up to 500 characters. Endpoints that read with `GET` or `DELETE` take it in the
+    `X-RV-Purpose` header, because query strings end up in access logs.
+  contact: { name: Onshore, url: "https://onshorevault.com/contact/" }
+  license: { name: Open source, url: "https://onshorevault.com" }
+servers:
+  - url: https://vault.yourbank.example
+    description: "Your install"
+  - url: https://vault.gb.onshorevault.com
+    description: "Onshore Cloud, United Kingdom region"
+security: [{ bearer: [] }]
+tags:
+  - name: Authentication
+    description: "Exchange a signed service-account assertion for a short-lived bearer token."
+  - name: Tokens
+    description: "Store values and get tokens back; reveal values as access rules allow."
+  - name: Records
+    description: "Store several fields at once, read them back, and change the value behind a token."
+  - name: Lookup
+    description: "Find the token for a value without decrypting anything."
+  - name: People
+    description: "The people (subjects) whose values are in a vault. Search, read, export, erase and restrict."
+  - name: Resident checks
+    description: "Yes-or-no questions about a stored value, answered in the vault's country."
+  - name: Detection
+    description: "Find identifiers in free text and JSON, and optionally tokenize them in the same call."
+  - name: Flow checks
+    description: "Let a job that copies data abroad report what each batch holds."
+  - name: Secure components
+    description: "Single-use client tokens for the collect and reveal frames."
+  - name: Cloaking
+    description: "Cloak text before it goes to an AI model or any outside service, and restore replies."
+  - name: Health
+    description: "Liveness of the vault service."
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "A 15-minute token from `POST /v1/auth/token`."
+  parameters:
+    vault:
+      name: vault
+      in: path
+      required: true
+      description: "The vault's ID, such as `v_live_13fcb69f22cd`. Test vaults start `v_test_`."
+      schema: { type: string, example: v_live_gb01 }
+    purpose:
+      name: X-RV-Purpose
+      in: header
+      required: true
+      description: "Why you need this, such as a ticket number. Recorded in the audit log."
+      schema: { type: string, maxLength: 500, example: Ticket 88213 }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: "A stable code to branch on."
+              enum: [invalid_request, unauthenticated, policy_denied, forbidden, token_not_found, not_found, duplicate_value, validation_failed, too_large, rate_limited, key_service_unavailable, detection_not_ready, internal]
+            message: { type: string, description: "A readable explanation. Never contains a sensitive value." }
+            policy: { type: string, description: "The access rule that decided, for refusals." }
+        request_id: { type: string, example: req_01HV3K8Z }
+    ItemError:
+      type: object
+      description: "Why one item in a batch failed, with `continue_on_error`."
+      properties:
+        code: { type: string, example: validation_failed }
+        message: { type: string, example: the value is not a valid uk_nino }
+        policy: { type: string }
+    TokenizeItem:
+      type: object
+      required: [field, value]
+      properties:
+        field: { type: string, description: "The vault field to store it in, such as `national_id`.", example: national_id }
+        value: { type: string, description: "The value. Checked against the field's data type.", example: AB123456C }
+        subject_ref: { type: string, description: "Your own customer reference. Groups values by person, so one person's data can later be found, exported or erased.", example: cust_1042 }
+    TokenizeResult:
+      type: object
+      properties:
+        index: { type: integer, description: "Position in the request." }
+        token: { type: string, example: tok_uk_nino_7Hq2xP9LmA4c }
+        existing: { type: boolean, description: "True when a \"same value, same token\" field already held this value, so the existing token was returned." }
+        error: { $ref: "#/components/schemas/ItemError" }
+    DetokenizeItem:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, example: tok_uk_nino_7Hq2xP9LmA4c }
+        redaction:
+          type: string
+          enum: [masked, token_only]
+          description: "Ask for less than your access rules allow. It can only narrow, never widen."
+    DetokenizeResult:
+      type: object
+      properties:
+        index: { type: integer }
+        decision:
+          type: string
+          enum: [plaintext, masked, token_only, denied]
+          description: "What the access rules decided."
+        value: { type: string, description: "The value, the masked value or the token, per `decision`. Absent when denied.", example: "•• •• •• 56 C" }
+        policy: { type: string, description: "The rule that decided." }
+        error: { $ref: "#/components/schemas/ItemError" }
+    Entity:
+      type: object
+      properties:
+        type: { type: string, description: "The data type, such as `uk_nino`, `iban`, `email`, or one of your own (`c_…`).", example: uk_nino }
+        start: { type: integer, description: "Byte offset where the match starts." }
+        end: { type: integer, description: "Byte offset where it ends." }
+        score: { type: number, format: float, description: "Confidence from 0 to 1.", example: 0.97 }
+        custom: { type: boolean, description: "True for one of your own data types." }
+        entity_version: { type: integer, description: "For your own data types, the published version that matched." }
+        shadow: { type: boolean, description: "True for a watch-only data type (only with `include_shadow`)." }
+    SubjectSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ref: { type: string, description: "Your customer reference." }
+        field_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        last_accessed: { type: [string, "null"], format: date-time }
+        reveals_30d: { type: integer, description: "Full reveals in the last 30 days." }
+        restricted: { type: boolean, description: "While true, nothing about this person reveals." }
+    SubjectField:
+      type: object
+      properties:
+        field: { type: string }
+        data_type: { type: string }
+        token: { type: string }
+        masked: { type: string, description: "The masked value, where your rules allow at least masked." }
+        decision: { type: string, enum: [masked, token_only, denied] }
+        record_id: { type: string }
+    CloakOptions:
+      type: object
+      description: |
+        What each kind of data becomes. Keys are data types; values are one of their choices.
+        Anything not listed becomes a placeholder.
+
+        | Key | Choices |
+        | --- | --- |
+        | `person_name` | `placeholder`, `synthetic` (stand-in name), `keep` |
+        | `amount` | `placeholder`, `band` (range in the same currency), `keep` |
+        | `date` | `placeholder`, `age_band`, `year`, `keep` |
+        | `address` | `keep` (default), `state`, `region` (country), `placeholder` |
+        | `phone`, `card_pan`, `payment_ref` | `placeholder`, `last4` |
+        | `email` | `placeholder`, `domain` |
+        | `phone_ng` | `placeholder`, `network`, `last4` |
+        | Country pack types (`uk_nino`, `iban`, `in_aadhaar`, `br_cpf`, …) | `placeholder`, `last4` |
+      additionalProperties: { type: string }
+      example: { person_name: synthetic, amount: band, date: age_band }
+  responses:
+    BadRequest: { description: "The request is malformed, or a purpose is missing.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthenticated: { description: "Missing or expired token.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Denied: { description: "No access rule allows this.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: "Unknown vault, token, record or person.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    RateLimited: { description: "A rate or reveal limit was reached. Retry later.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    KeysUnavailable: { description: "The key service is sealed or unreachable. Nothing was decrypted or stored.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+paths:
+  /v1/auth/token:
+    post:
+      tags: [Authentication]
+      operationId: authToken
+      summary: "Get a bearer token"
+      description: |
+        Exchange a signed, single-use assertion for a 15-minute bearer token.
+
+        The assertion is a JWT signed with EdDSA (Ed25519): header `{"alg":"EdDSA","typ":"JWT","kid":"<key id>"}`,
+        claims `iss` and `sub` = the service account ID, `aud` = `onshore`, a unique `jti`, `iat`, and `exp` within 5 minutes.
+        Each `jti` works once. If the key has an IP allowlist, the caller's address must be on it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assertion]
+              properties:
+                assertion: { type: string, example: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImtleV8wMSJ9.eyJpc3MiOiJzYV8wMSJ9.c2ln }
+      responses:
+        "200":
+          description: "A bearer token."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, example: Bearer }
+                  expires_in: { type: integer, example: 900 }
+        "401": { description: "Signature, audience, expiry or replay check failed.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: "The caller's IP isn't on the key's allowlist.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/vaults/{vault}/tokenize:
+    post:
+      tags: [Tokens]
+      operationId: tokenize
+      summary: "Store values and get tokens"
+      description: |
+        Stores up to 500 values and returns a token for each. Each value is checked against its field's
+        data type (and, for your own data types, its pattern and check rule).
+
+        For a "same value, same token" field, storing a value already held returns the existing token
+        with `existing: true`, so retries are safe. Card numbers are refused everywhere in the vault.
+
+        Set `dry_run` to check everything (format, access rules) and store nothing.
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/TokenizeItem" } }
+                continue_on_error: { type: boolean, default: false, description: "Return a result per item instead of failing the whole batch." }
+                dry_run: { type: boolean, default: false, description: "Check and store nothing." }
+            example:
+              items:
+                - { field: national_id, value: AB123456C, subject_ref: cust_1042 }
+                - { field: phone, value: "07700 900123", subject_ref: cust_1042 }
+      responses:
+        "200":
+          description: "A result per item."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { $ref: "#/components/schemas/TokenizeResult" } }
+                  request_id: { type: string }
+              example:
+                results:
+                  - { index: 0, token: tok_uk_nino_7Hq2xP9LmA4c }
+                  - { index: 1, token: tok_phone_x7Tn2VbG5a, existing: true }
+                request_id: req_01HV3K8Z
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Denied" }
+        "422": { description: "A value fails its field's format check (`validation_failed`).", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { $ref: "#/components/responses/KeysUnavailable" }
+  /v1/vaults/{vault}/detokenize:
+    post:
+      tags: [Tokens]
+      operationId: detokenize
+      summary: "Reveal values"
+      description: |
+        Returns up to 500 values as your access rules allow: the real value, a masked one, the token, or
+        nothing. A purpose is always required. Every item is recorded in the audit log.
+
+        Fails closed: if the key service is unavailable, nothing is decrypted and the call fails. A token
+        is never returned as if it were the value.
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, purpose]
+              properties:
+                items: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/DetokenizeItem" } }
+                purpose: { type: string, maxLength: 500 }
+                continue_on_error: { type: boolean, default: false }
+            example:
+              items: [{ token: tok_uk_nino_7Hq2xP9LmA4c }, { token: tok_phone_x7Tn2VbG5a, redaction: masked }]
+              purpose: Ticket 88213
+      responses:
+        "200":
+          description: "A decision per item."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { $ref: "#/components/schemas/DetokenizeResult" } }
+                  request_id: { type: string }
+              example:
+                results:
+                  - { index: 0, decision: masked, value: "•• •• •• 56 C", policy: support-agent }
+                  - { index: 1, decision: masked, value: "*******0123", policy: support-agent }
+                request_id: req_01HV3K9A
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Denied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/KeysUnavailable" }
+  /v1/vaults/{vault}/records:
+    post:
+      tags: [Records]
+      operationId: insertRecord
+      summary: "Store a record"
+      description: "Stores several fields for one person at once and returns a token per field."
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fields]
+              properties:
+                fields: { type: object, additionalProperties: { type: string }, description: "Field name to value. Up to 500." }
+                subject_ref: { type: string }
+            example: { fields: { national_id: AB123456C, phone: "07700 900123", email: sam@example.com }, subject_ref: cust_1042 }
+      responses:
+        "200":
+          description: "The record and its tokens."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  tokens: { type: object, additionalProperties: { type: string } }
+                  request_id: { type: string }
+              example: { id: rec_9b2f, tokens: { national_id: tok_uk_nino_7Hq2xP9LmA4c, phone: tok_phone_x7Tn2VbG5a, email: tok_email_c9Rd3HyM1u }, request_id: req_01HV3KA0 }
+        "403": { $ref: "#/components/responses/Denied" }
+        "422": { description: "A value fails its field's format check." }
+  /v1/vaults/{vault}/records/{id}:
+    get:
+      tags: [Records]
+      operationId: getRecord
+      summary: "Read a record"
+      description: "Returns each field of a record as your access rules allow. The purpose goes in a header."
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/purpose" }
+      responses:
+        "200":
+          description: "The fields, each with its decision."
+          content: { application/json: { schema: { type: object, properties: { fields: { type: object, additionalProperties: { $ref: "#/components/schemas/DetokenizeResult" } }, request_id: { type: string } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/vaults/{vault}/records/{id}/read:
+    post:
+      tags: [Records]
+      operationId: readRecord
+      summary: "Read a record (purpose in the body)"
+      description: "The same as `GET /records/{id}`, for clients that prefer sending the purpose in a body."
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [purpose], properties: { purpose: { type: string, maxLength: 500 } } } } } }
+      responses:
+        "200": { description: "The fields, each with its decision." }
+  /v1/vaults/{vault}/tokens/{token}:
+    put:
+      tags: [Records]
+      operationId: updateValue
+      summary: "Change the value behind a token"
+      description: "Changes the value behind a **new-token-each-time** (cell) token. The token keeps pointing at the new value. Other token kinds can't be updated."
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: string } } }, example: { value: "07700 900456" } } } }
+      responses:
+        "200": { description: "Updated.", content: { application/json: { schema: { type: object, properties: { token: { type: string }, request_id: { type: string } } } } } }
+        "400": { description: "Not a cell token." }
+  /v1/vaults/{vault}/lookup:
+    post:
+      tags: [Lookup]
+      operationId: lookup
+      summary: "Find a token by value"
+      description: |
+        Finds the token for a value through the field's blind index (a keyed hash), without decrypting
+        anything. The field must be deterministic (same value, same token) or marked searchable. Limited to 60 a minute per caller.
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [field, value], properties: { field: { type: string }, value: { type: string } } }, example: { field: national_id, value: AB123456C } } } }
+      responses:
+        "200": { description: "The token.", content: { application/json: { schema: { type: object, properties: { token: { type: string }, request_id: { type: string } } }, example: { token: tok_uk_nino_7Hq2xP9LmA4c } } } }
+        "404": { description: "No such value (`token_not_found`)." }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/vaults/{vault}/subjects/search:
+    post:
+      tags: [People]
+      operationId: searchSubjects
+      summary: "Search people"
+      description: "Lists the people in a vault. `query` matches a token, a customer reference, or an exact value (through the blind index). Needs the `search` action."
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                field_type: { type: string, description: "Only people holding this data type." }
+                has_reveals: { type: boolean, description: "Only people revealed in the last 30 days." }
+                flagged: { type: boolean }
+                created_after: { type: string, format: date }
+                created_before: { type: string, format: date }
+                sort: { type: string, enum: [created_at, field_count, last_accessed], default: created_at }
+                dir: { type: string, enum: [asc, desc], default: desc }
+                limit: { type: integer, default: 50 }
+                offset: { type: integer, default: 0 }
+            example: { query: cust_1042, limit: 20 }
+      responses:
+        "200": { description: "A page of people and the total.", content: { application/json: { schema: { type: object, properties: { subjects: { type: array, items: { $ref: "#/components/schemas/SubjectSummary" } }, total: { type: integer } } } } } }
+  /v1/vaults/{vault}/subjects/{id}:
+    get:
+      tags: [People]
+      operationId: getSubject
+      summary: "Read a person"
+      description: "One person's fields, each masked at most. Never returns real values; use detokenize for that."
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: "The person and their fields.", content: { application/json: { schema: { allOf: [{ $ref: "#/components/schemas/SubjectSummary" }, { type: object, properties: { fields: { type: array, items: { $ref: "#/components/schemas/SubjectField" } } } }] } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [People]
+      operationId: eraseSubject
+      summary: "Erase a person"
+      description: |
+        Erases everything held on the person, with an audit record. A value shared with another person
+        survives until its last owner is erased. Needs the `delete` action. The purpose goes in a header.
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/purpose" }
+      responses:
+        "200": { description: "How many records were erased.", content: { application/json: { schema: { type: object, properties: { erased_records: { type: integer }, request_id: { type: string } } } } } }
+        "403": { $ref: "#/components/responses/Denied" }
+  /v1/vaults/{vault}/subjects/{id}/export:
+    get:
+      tags: [People]
+      operationId: exportSubject
+      summary: "Export a person's data"
+      description: "Exports one person's fields for an access request, as your access rules allow. Needs the `export` action."
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/purpose" }
+      responses:
+        "200": { description: "The person's fields.", content: { application/json: { schema: { type: object, properties: { subject_id: { type: string }, fields: { type: array, items: { type: object, properties: { field: { type: string }, data_type: { type: string }, value: { type: string, description: "As your access rules allow: the value, masked, or the token." }, token: { type: string }, decision: { type: string, enum: [plaintext, masked, token_only, denied] } } } }, request_id: { type: string } } } } } }
+        "403": { $ref: "#/components/responses/Denied" }
+  /v1/vaults/{vault}/subjects/{id}/restrict:
+    post:
+      tags: [People]
+      operationId: restrictSubject
+      summary: "Restrict or lift a restriction"
+      description: "While a person is restricted, nothing about them reveals, whatever the access rules say."
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [restricted, purpose], properties: { restricted: { type: boolean }, purpose: { type: string } } }, example: { restricted: true, purpose: "Objection received, case 551" } } } }
+      responses:
+        "200": { description: "The new state.", content: { application/json: { schema: { type: object, properties: { restricted: { type: boolean } } } } } }
+  /v1/vaults/{vault}/resident/check:
+    post:
+      tags: [Resident checks]
+      operationId: residentCheck
+      summary: "Ask a yes-or-no question"
+      description: |
+        Compares a stored value with an argument in the vault's country and returns only `true` or `false`.
+        Needs the `compare` action, and shares the lookup rate limit.
+
+        | `check` | Field must hold | `arg` | True when |
+        | --- | --- | --- | --- |
+        | `equals` | Any data type | A value | The stored value equals it, after the field's normalising (spacing, case, separators) |
+        | `name_match` | `person_name` | A name | The same name parts in any order: `Okafor Ada` matches `Ada Okafor` |
+        | `age_at_least` | `date` | Whole years, 0 to 150 | The stored date of birth makes the person at least that old today |
+        | `amount_at_least` | `amount` | A number | The stored amount is at least that. Currency symbols are ignored, and `£1,250.50`, `1.250,50 €` and `1 250,50` all read as 1250.5 |
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [token, check, arg, purpose], properties: { token: { type: string }, check: { type: string, enum: [equals, name_match, age_at_least, amount_at_least] }, arg: { type: string }, purpose: { type: string } } }, example: { token: tok_date_k2Fq, check: age_at_least, arg: "18", purpose: Onboarding eligibility } } } }
+      responses:
+        "200": { description: "The answer.", content: { application/json: { schema: { type: object, properties: { result: { type: boolean }, request_id: { type: string } } }, example: { result: true } } } }
+        "403": { $ref: "#/components/responses/Denied" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/resident/compare:
+    post:
+      tags: [Resident checks]
+      operationId: residentCompare
+      summary: "Compare a token with a value"
+      description: "Shorthand for an `equals` check, naming the vault in the body."
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [vault, token, value, purpose], properties: { vault: { type: string }, token: { type: string }, value: { type: string }, purpose: { type: string } } } } } }
+      responses:
+        "200": { description: "The answer.", content: { application/json: { schema: { type: object, properties: { result: { type: boolean } } } } } }
+  /v1/detect:
+    post:
+      tags: [Detection]
+      operationId: detect
+      summary: "Find identifiers in text"
+      description: |
+        Finds identifiers in free text or JSON. Name a `vault` for its country packs and your own data
+        types to apply; without one, every built-in pack is used. With `tokenize`, each match that maps to
+        a field of the vault is stored and replaced by its token in `text`; types with no field are masked.
+        Card numbers are always masked, never stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string, maxLength: 1048576 }
+                vault: { type: string, description: "Required with `tokenize`." }
+                tokenize: { type: boolean, default: false }
+                entities: { type: array, items: { type: string }, description: "Only these data types (built-in or your own slugs)." }
+                include_shadow: { type: boolean, default: false, description: "Also list matches from watch-only data types." }
+            example: { text: "Refund to GB82 WEST 1234 5698 7654 32 failed. My NI number is AB 12 34 56 C", vault: v_live_gb01, tokenize: true }
+      responses:
+        "200":
+          description: "The matches, and the text with tokens when tokenizing."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entities: { type: array, items: { $ref: "#/components/schemas/Entity" } }
+                  text: { type: string }
+                  ruleset_version: { type: integer }
+                  request_id: { type: string }
+              example:
+                entities: [{ type: iban, start: 10, end: 37, score: 0.99, custom: false }, { type: uk_nino, start: 62, end: 75, score: 0.97, custom: false }]
+                text: Refund to tok_iban_Qa81LmZ3Xe0d failed. My NI number is tok_uk_nino_7Hq2xP9LmA4c
+                ruleset_version: 14
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { description: "The vault's detection rules are still loading (`detection_not_ready`). Retry shortly." }
+  /v1/vaults/{vault}/flows/{flow}/check:
+    post:
+      tags: [Flow checks]
+      operationId: checkFlow
+      summary: "Check a batch before it leaves"
+      description: |
+        A job that copies data somewhere Onshore can't sit in the path sends a sample of each batch. Only
+        counts are kept, never the text. Identifiers found count as passed unprotected; tokens count as
+        protected. The first check puts the flow on the residency map. Find the flow ID on the map.
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: flow, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 1048576 } } } } } }
+      responses:
+        "200": { description: "What the sample held.", content: { application/json: { schema: { type: object, properties: { identifiers: { type: integer }, tokens: { type: integer }, clean: { type: boolean }, by_type: { type: object, additionalProperties: { type: integer } } } }, example: { identifiers: 0, tokens: 240, clean: true, by_type: {} } } } }
+        "404": { description: "Unknown vault or flow." }
+  /v1/vaults/{vault}/client-tokens:
+    post:
+      tags: [Secure components]
+      operationId: createClientToken
+      summary: "Mint a client token"
+      description: |
+        Mints a single-use token for a collect or reveal frame, for one origin. Call it from your server,
+        never a browser or app. The origin must be listed under the vault's secure components.
+
+        Your server must check that the person may see the record before minting a reveal token: access
+        rules apply to the service account that mints it.
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, origin]
+              properties:
+                kind: { type: string, enum: [collect, reveal] }
+                origin: { type: string, description: "`https://…` for a site, or `rvapp://<app id>` for a mobile app.", example: "https://app.yourbank.example" }
+                fields: { type: array, items: { type: string }, maxItems: 10, description: "For collect." }
+                tokens: { type: array, items: { type: string }, maxItems: 20, description: "For reveal." }
+                purpose: { type: string, description: "Required for reveal." }
+                on_behalf_of: { type: string, description: "Who in your system asked, recorded in the audit log." }
+                subject_ref: { type: string, description: "For collect, the person the values belong to." }
+                bind_ip: { type: string, description: "Only this IP address may redeem the token." }
+                ttl_seconds: { type: integer, default: 120, maximum: 600 }
+            examples:
+              collect: { value: { kind: collect, origin: "https://app.yourbank.example", fields: [national_id], subject_ref: cust_1042 } }
+              reveal: { value: { kind: reveal, origin: "https://app.yourbank.example", tokens: [tok_uk_nino_7Hq2xP9LmA4c], purpose: Support ticket 7, on_behalf_of: agent ada, bind_ip: 203.0.113.7 } }
+      responses:
+        "200": { description: "The client token.", content: { application/json: { schema: { type: object, properties: { client_token: { type: string, example: rvct_9f2k… }, expires_at: { type: string, format: date-time }, request_id: { type: string } } } } } }
+        "400": { description: "The origin isn't allowed, or the request is malformed." }
+        "403": { $ref: "#/components/responses/Denied" }
+  /v1/vaults/{vault}/cloak:
+    post:
+      tags: [Cloaking]
+      operationId: cloak
+      summary: "Cloak text"
+      description: |
+        Replaces identifiers in text with placeholders, stand-in names or less specific values, before the
+        text goes to an AI model or any outside service. Send a saved cloak setting (`profile_id`) or the
+        setting inline (`options`), not both. With `keep_days`, the map back to the real values is kept
+        sealed in the vault as a digital twin, and its `id` returned.
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 262144 }
+                profile_id: { type: string }
+                options: { $ref: "#/components/schemas/CloakOptions" }
+                keep_days: { type: integer, minimum: 0, maximum: 365 }
+            example: { text: "Hi, I'm Sarah Johnson, 34. My card 4111 1111 1111 1111 was charged £1,250.50 twice.", options: { person_name: synthetic, amount: band }, keep_days: 7 }
+      responses:
+        "200":
+          description: "The cloaked text."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text: { type: string }
+                  changed: { type: object, additionalProperties: { type: integer }, description: "Counts by data type." }
+                  id: { type: string, description: "The digital twin's ID, with `keep_days`." }
+              example: { text: "Hi, I'm Emily Carter, 34. My card [CARD_1] was charged £1k–£2k twice.", changed: { person_name: 1, card_pan: 1, amount: 1 }, id: twin_4k2p }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { description: "Text over 256 KB (`too_large`)." }
+        "503": { description: "Detection rules still loading." }
+  /v1/vaults/{vault}/uncloak:
+    post:
+      tags: [Cloaking]
+      operationId: uncloak
+      summary: "Restore cloaked text"
+      description: |
+        Swaps placeholders and stand-in names in text (such as a model's reply) back to real values, using a
+        digital twin. Each kind of value comes back in full only if your access rules allow plaintext for it;
+        otherwise masked. Audited like a reveal. Ranges, age bands and places aren't reversible.
+      parameters: [{ $ref: "#/components/parameters/vault" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [id, text, purpose], properties: { id: { type: string }, text: { type: string, maxLength: 262144 }, purpose: { type: string } } }, example: { id: twin_4k2p, text: "Sorry, Emily. I've flagged the duplicate charge on [CARD_1].", purpose: Support chat 551 } } } }
+      responses:
+        "200": { description: "The restored text and the decision per type.", content: { application/json: { schema: { type: object, properties: { text: { type: string }, decisions: { type: object, additionalProperties: { type: string } } } }, example: { text: "Sorry, Sarah. I've flagged the duplicate charge on ****1111.", decisions: { person_name: plaintext, card_pan: masked } } } } }
+        "404": { description: "No such twin, or it has expired (`not_found`)." }
+  /v1/vaults/{vault}/twins/{id}:
+    delete:
+      tags: [Cloaking]
+      operationId: deleteTwin
+      summary: "Delete a digital twin"
+      parameters:
+        - { $ref: "#/components/parameters/vault" }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "Deleted." }
+        "404": { description: "No such twin." }
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: health
+      summary: "Health check"
+      security: []
+      responses:
+        "200": { description: "The vault service is up." }

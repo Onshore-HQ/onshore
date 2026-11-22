@@ -1,0 +1,52 @@
+---
+title: Configuration
+description: Every setting in .env. What rv init writes, and the optional settings you can add.
+---
+
+import { Callout } from "nextra/components";
+
+# Configuration
+
+Settings live in `deploy/compose/.env`. `rv init` writes it with fresh secrets. Keep it out of version control and out of backups of app configuration. After a change, restart the affected services with `docker compose up -d`.
+
+## Written by rv init
+
+| Setting | Meaning |
+| --- | --- |
+| `RV_ENV` | `production`. Refuses development-only options |
+| `RV_HOST` | The install's DNS name |
+| `RV_COUNTRY` | The country this install keeps data in. **Final** |
+| `RV_PRIMARY_URL`, `RV_JOIN_CODE` | For a linked install: the primary console and the single-use join code |
+| `DB_PASSWORD`, `RV_VAULT_DB_PASSWORD`, `RV_CONTROL_DB_PASSWORD` | Database passwords; each service has its own least-privilege role |
+| `RV_INTERNAL_TOKEN` | Authenticates internal calls between services |
+| `RV_TOKEN_SIGNING_SEED` | Signs data API tokens |
+| `RV_USER_TOKEN_SEED`, `RV_USER_TOKEN_PUBLIC_KEY` | Sign and check console sessions |
+| `RV_CONTROL_SECRET` | Encrypts secrets the control plane stores (client secrets, TOTP seeds, signing keys) |
+| `RV_ADAPTER_SECRET` | Secret for support tool adapters |
+| `RV_BOOTSTRAP_TOKEN` | Needed once, for first-time setup |
+| `RV_LICENCE` | The Enterprise licence, if any |
+| `OPENBAO_TOKEN` | Written by `rv keys init` |
+
+<Callout type="warning">
+Losing `.env` means losing the secrets that sign sessions and decrypt stored settings. Back it up separately and securely. It doesn't hold the master key: that's in the key service, unlocked by key holders.
+</Callout>
+
+## Optional
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `RV_TLS` | internal certificate | `"/certs/cert.pem /certs/key.pem"` for your own certificate |
+| `RV_HTTPS_PORT`, `RV_PUBLIC_PORT` | 443 | The port the edge listens on, and the one people use in links |
+| `RV_SESSION_IDLE_MINUTES` | 15 | Console idle sign-out, 5 to 720. Sessions always end after 12 hours |
+| `RV_TRUSTED_PROXIES` | the edge's network | Comma-separated CIDRs whose `X-Forwarded-For` is trusted, if you put a load balancer in front |
+| `RV_AUTH_FAILURES_PER_MINUTE` | 120 | Failed API authentications allowed per address per minute |
+| `RV_GEOIP_CSV` | none | A CSV of IP ranges to countries, to record (never trust) where reveals came from |
+| `KEY_BACKEND` | `openbao` | `openbao`, or `pkcs11` for an HSM (needs the HSM image). `local` is refused in production |
+| `PKCS11_MODULE`, `PKCS11_SLOT_LABEL`, `PKCS11_PIN`, `PKCS11_KEY_LABEL` | — | HSM settings. See [Hardware security modules](/operate/hsm/) |
+| `RV_PRIMARY_CA` | — | Certificate authority to trust for the primary, on a linked install |
+| `RV_CLOUD`, `RV_CLOUD_REGIONS` | — | Onshore Cloud only: `1`, and the open regions, such as `GB,DE,NG` |
+| `RV_WHISPER_MODEL` | built in | Speech model for the file redactor |
+| `RV_MONITOR_INTERVAL_MS` | 30000 | How often services are health-checked |
+| `RV_MAP_INTERVAL_MS` | 60000 | How often the residency map recalculates |
+| `RV_PAGE_SCAN_INTERVAL_MS` | 900000 | How often protected pages are scanned |
+| `RV_ALLOW_HTTP_UPSTREAM`, `RV_ALLOW_PRIVATE_UPSTREAM` | false | **Testing only.** Allow plain-HTTP or private destinations |

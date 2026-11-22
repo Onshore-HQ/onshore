@@ -1,0 +1,47 @@
+---
+title: Onshore documentation
+description: Keep customer data in its country, and keep your global tools. Everything about setting up, using, integrating and running Onshore.
+---
+
+import { Callout } from "nextra/components";
+
+# Onshore documentation
+
+Onshore keeps your customers' sensitive data in the country it belongs to, while the tools you already use — log platforms, AI models, helpdesks, analytics, vendor APIs — keep working. It does this by swapping national IDs, bank accounts, phone numbers, names and amounts for **tokens** before data leaves, and keeping the real values encrypted in a **vault** in that country, behind **access rules** you control. Every access is written to a tamper-evident **audit log**, so you can prove it.
+
+<Shot src="/screenshots/overview.png" alt="The Onshore console home page, showing alerts that need attention, the number of connections, values protected and real values viewed" caption="The console's home page. Screenshots in these docs show Lagoon Pay, a fictional company, with made-up data." />
+
+## Where to start
+
+<Cards items={[
+  ["What Onshore is", "/get-started/", "The problem it solves and the ideas behind it, in plain words. Start here if you're new."],
+  ["How it works", "/get-started/how-it-works/", "Vaults, tokens, detection, access rules and the audit log, and how a value travels."],
+  ["Install it", "/get-started/install/", "Run Onshore on your own server with Docker Compose, from a clean machine to a working install."],
+  ["First-time setup", "/get-started/first-time-setup/", "The five-step setup screen: your organisation, countries, laws and data."],
+  ["Use the console", "/guides/", "Every screen, what it's for, and how to do each task, with screenshots."],
+  ["Integrate", "/developers/", "SDKs, the data API, log pipelines, the AI gateway, the HTTP proxy and webhooks."],
+]} />
+
+## Who these docs are for
+
+| You are… | Read |
+| --- | --- |
+| **A compliance, risk or data protection lead** deciding whether Onshore fits | [What Onshore is](/get-started/), [Countries and laws](/countries/), [Reports](/guides/reports/), [Security model](/security/) |
+| **An admin** setting Onshore up for your organisation | [First-time setup](/get-started/first-time-setup/), [People and roles](/guides/people-and-roles/), [Access rules](/guides/access-rules/), [Sign-in and identity](/identity/) |
+| **A support or operations person** using the console every day | [Console tour](/get-started/console-tour/), [Customer records](/guides/customer-records/), [Audit log](/guides/audit-log/) |
+| **A developer** connecting your systems | [Developers](/developers/), [SDKs](/developers/sdks/), [Data API](/developers/data-api/) |
+| **An engineer** running the servers | [Run it yourself](/operate/), [Configuration](/operate/configuration/), [Keys and unsealing](/operate/keys/) |
+
+## Editions at a glance
+
+Onshore is open source. The same software runs in every edition:
+
+- **Free** — self-hosted, one country per install, every product.
+- **Enterprise** — self-hosted, with linked installs in several countries under one console, single sign-on, SCIM and LDAP, and support.
+- **Onshore Cloud** — we run it for you, with a region in each country we open.
+
+See [Editions](/get-started/editions/) for the full comparison.
+
+<Callout type="warning">
+Onshore is in **early access**. It hasn't had an independent penetration test yet, and some parts have only been tested against stand-ins for real vendors. Don't load real customer data until the items in [Known limits](/operate/known-limits/) that matter to you are closed.
+</Callout>
