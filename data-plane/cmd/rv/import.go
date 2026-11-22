@@ -100,7 +100,7 @@ type importResult struct {
 // can be stopped and run again: it carries on from a progress file beside its output.
 func cmdImport(args []string) error {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
-	base := fs.String("url", "", "Onshore's address, such as https://vault.yourbank.ng")
+	base := fs.String("url", "", "Onshore's address, such as https://vault.yourhost.ng")
 	vaultID := fs.String("vault", "", "vault ID")
 	sa := fs.String("sa", "", "service account ID")
 	kid := fs.String("key-id", "", "service account key ID")

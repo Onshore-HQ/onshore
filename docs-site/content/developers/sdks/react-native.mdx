@@ -23,7 +23,7 @@ import { Callout } from "nextra/components";
 npm install @onshorehq/react-native
 ```
 
-List your app under **Vaults → Secure components** as `rvapp://` plus its ID in lower case (`rvapp://com.yourbank.wallet`), and have your server mint client tokens for that origin with [`createClientToken`](/developers/sdks/node/#createclienttoken).
+List your app under **Vaults → Secure components** as `rvapp://` plus its ID in lower case (`rvapp://com.yourhost.wallet`), and have your server mint client tokens for that origin with [`createClientToken`](/developers/sdks/node/#createclienttoken).
 
 ## createClient
 
@@ -31,8 +31,8 @@ List your app under **Vaults → Secure components** as `rvapp://` plus its ID i
 import { createClient } from "@onshorehq/react-native";
 
 export const onshore = createClient({
-  baseUrl: "https://vault.yourbank.example",
-  appOrigin: "rvapp://com.yourbank.wallet",
+  baseUrl: "https://vault.yourhost.example",
+  appOrigin: "rvapp://com.yourhost.wallet",
   timeoutMs: 15000,   // default
   // fetch: myFetch,  // e.g. one that pins certificates
 });

@@ -17,7 +17,7 @@ import (
 // for trying the API by hand (curl, the API reference). Only the token is printed.
 func cmdToken(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
-	base := fs.String("url", os.Getenv("ONSHORE_URL"), "Onshore's address, such as https://vault.yourbank.example (or ONSHORE_URL)")
+	base := fs.String("url", os.Getenv("ONSHORE_URL"), "Onshore's address, such as https://vault.yourhost.example (or ONSHORE_URL)")
 	sa := fs.String("sa", os.Getenv("ONSHORE_SA_ID"), "service account ID (or ONSHORE_SA_ID)")
 	kid := fs.String("key-id", os.Getenv("ONSHORE_KEY_ID"), "service account key ID (or ONSHORE_KEY_ID)")
 	keyFile := fs.String("key-file", "", "file holding the key's private seed, from rv sa-keygen")

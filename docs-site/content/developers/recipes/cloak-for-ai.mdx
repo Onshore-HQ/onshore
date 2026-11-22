@@ -61,7 +61,7 @@ export async function answer(chatId: string, customerMessage: string) {
   const completion = await openai.chat.completions.create({
     model: "gpt-5",
     messages: [
-      { role: "system", content: "You are a bank support assistant. Placeholders like [CARD_1] stand for real values; repeat them exactly." },
+      { role: "system", content: "You are a customer support assistant. Placeholders like [CARD_1] stand for real values; repeat them exactly." },
       { role: "user", content: cloaked.text },
     ],
   });
@@ -81,7 +81,7 @@ def answer(chat_id: str, customer_message: str) -> str:
     msg = claude.messages.create(
         model="claude-sonnet-5-5",
         max_tokens=1024,
-        system="You are a bank support assistant. Placeholders like [CARD_1] stand for real values; repeat them exactly.",
+        system="You are a customer support assistant. Placeholders like [CARD_1] stand for real values; repeat them exactly.",
         messages=[{"role": "user", "content": c["text"]}],
     )
     reply = "".join(b.text for b in msg.content if b.type == "text")

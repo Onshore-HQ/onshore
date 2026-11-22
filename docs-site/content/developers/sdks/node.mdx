@@ -34,7 +34,7 @@ You need four things from the console:
 
 | What | Where | Looks like |
 | --- | --- | --- |
-| Your install's address | The address you open the console on, without `/console` | `https://vault.yourbank.example` |
+| Your install's address | The address you open the console on, without `/console` | `https://vault.yourhost.example` |
 | A vault ID | **Vaults**, in the vault's header | `v_live_gb01` (test vaults start `v_test_`) |
 | A key pair | `./rv sa-keygen` prints the public key and writes the private key (a base64 seed) | |
 | A service account ID and key ID | **People → Add a person or service account → Service account**, pasting the public key | `sa_01HV…`, `key_01HV…` |
@@ -49,7 +49,7 @@ The service account also needs an **access rule** that allows what you call. A n
 import { VaultClient } from "@onshorehq/sdk";
 
 export const vault = new VaultClient({
-  baseUrl: process.env.ONSHORE_URL!,             // https://vault.yourbank.example
+  baseUrl: process.env.ONSHORE_URL!,             // https://vault.yourhost.example
   serviceAccountId: process.env.ONSHORE_SA_ID!,  // sa_…
   keyId: process.env.ONSHORE_KEY_ID!,            // key_…
   privateKey: process.env.ONSHORE_PRIVATE_KEY!,  // base64 Ed25519 seed
@@ -81,7 +81,7 @@ import { Agent, ProxyAgent, fetch as undiciFetch } from "undici";
 import { readFileSync } from "node:fs";
 
 // Trust your own CA, for an install with a private certificate.
-const agent = new Agent({ connect: { ca: readFileSync("/etc/ssl/yourbank-ca.pem") } });
+const agent = new Agent({ connect: { ca: readFileSync("/etc/ssl/yourhost-ca.pem") } });
 // Or go through a corporate proxy:
 // const agent = new ProxyAgent("http://proxy.internal:3128");
 
@@ -666,7 +666,7 @@ Mints a single-use token that lets a browser or app collect or reveal values thr
 | Option | Meaning |
 | --- | --- |
 | `kind` | `collect` to take values in, `reveal` to show them |
-| `origin` | The site (`https://app.yourbank.example`) or app (`rvapp://com.yourbank.app`) that will use it. Must be listed under the vault's secure components |
+| `origin` | The site (`https://app.yourhost.example`) or app (`rvapp://com.yourhost.app`) that will use it. Must be listed under the vault's secure components |
 | `fields` | For collect: up to 10 fields the form shows |
 | `tokens` | For reveal: up to 20 tokens to show |
 | `purpose` | Required for reveal. Recorded with each value shown |
@@ -680,7 +680,7 @@ Mints a single-use token that lets a browser or app collect or reveal values thr
 app.post("/api/id-form", requireUser, async (req, res) => {
   const { client_token } = await vault.createClientToken(VAULT, {
     kind: "collect",
-    origin: "https://app.yourbank.example",
+    origin: "https://app.yourhost.example",
     fields: ["national_id"],
     subjectRef: req.user.customerId,
     bindIp: req.ip,

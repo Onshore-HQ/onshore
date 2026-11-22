@@ -11,7 +11,7 @@ Create an AI route in the console ([AI gateway](/guides/connections/ai-gateway/)
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://vault.yourbank.example/ai/<route-id>/v1",   # was the provider's URL
+    base_url="https://vault.yourhost.example/ai/<route-id>/v1",   # was the provider's URL
     api_key=os.environ["OPENAI_API_KEY"],                         # your provider key, passed through
     default_headers={
         "X-RV-Route-Key": os.environ["ONSHORE_ROUTE_KEY"],

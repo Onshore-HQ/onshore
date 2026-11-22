@@ -19,14 +19,14 @@ In **Settings → Sign-in → LDAP directory**:
 
 | Field | Example |
 | --- | --- |
-| **Directory URL** | `ldaps://dc1.yourbank.example:636`, or `ldap://…:389` with **Upgrade ldap:// with StartTLS** ticked |
+| **Directory URL** | `ldaps://dc1.yourhost.example:636`, or `ldap://…:389` with **Upgrade ldap:// with StartTLS** ticked |
 | **CA certificate** | If your directory uses a private certificate authority, its certificate in PEM form |
-| **Service account DN** and **password** | An account that can search for people, such as `CN=svc-onshore,OU=Service,DC=yourbank,DC=example` |
-| **Where to look for people** (base DN) | `OU=Staff,DC=yourbank,DC=example` |
+| **Service account DN** and **password** | An account that can search for people, such as `CN=svc-onshore,OU=Service,DC=yourhost,DC=example` |
+| **Where to look for people** (base DN) | `OU=Staff,DC=yourhost,DC=example` |
 | **User filter** | `(&(objectClass=person)(mail={email}))`. `{email}` is replaced by the address typed |
-| **Where to look for groups** (optional) | `OU=Groups,DC=yourbank,DC=example`. `memberOf` is read either way |
+| **Where to look for groups** (optional) | `OU=Groups,DC=yourhost,DC=example`. `memberOf` is read either way |
 | **Group filter** | `(&(objectClass=groupOfNames)(member={dn}))`. `{dn}` is the person |
-| **Email domains** | `yourbank.example` |
+| **Email domains** | `yourhost.example` |
 
 For Active Directory, select **Use Active Directory defaults**.
 

@@ -15,7 +15,7 @@ info:
       loses the admin role.
     - **People's session tokens** work for everything else, with that person's roles.
 servers:
-  - url: https://vault.yourbank.example/control
+  - url: https://vault.yourhost.example/control
     description: "Your install"
 security: [{ bearer: [] }]
 tags:
@@ -333,7 +333,7 @@ paths:
       tags: [Webhooks]
       summary: "Create a webhook"
       description: "Up to 20 per organisation. The URL must be public and https. Starts from now, without history."
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [url, event_types], properties: { url: { type: string }, description: { type: string, maxLength: 200 }, event_types: { type: array, items: { type: string } } } }, example: { url: "https://hooks.yourbank.example/onshore", event_types: [reveal.denied, access.break_glass, monitor.component_down] } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [url, event_types], properties: { url: { type: string }, description: { type: string, maxLength: 200 }, event_types: { type: array, items: { type: string } } } }, example: { url: "https://hooks.yourhost.example/onshore", event_types: [reveal.denied, access.break_glass, monitor.component_down] } } } }
       responses: { "201": { description: "The webhook, with its signing `secret` shown once." } }
   /v1/webhooks/{id}:
     patch:

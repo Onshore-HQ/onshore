@@ -7,7 +7,7 @@ import { Callout } from "nextra/components";
 
 # Hardware security modules
 
-Banks can keep the master key in their own HSM. Onshore talks to it over **PKCS#11**: data keys are wrapped under a key created inside the HSM, which never leaves it.
+You can keep the master key in your own HSM. Onshore talks to it over **PKCS#11**: data keys are wrapped under a key created inside the HSM, which never leaves it.
 
 1. Use the `vault-api-hsm` image, which includes PKCS#11 support.
 2. Set in `.env`:

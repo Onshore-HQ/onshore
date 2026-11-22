@@ -38,7 +38,7 @@ composer require onshorehq/sdk:^0.1
 use Onshore\VaultClient;
 
 $vault = new VaultClient(
-    getenv('ONSHORE_URL'),          // https://vault.yourbank.example
+    getenv('ONSHORE_URL'),          // https://vault.yourhost.example
     getenv('ONSHORE_SA_ID'),        // sa_…
     getenv('ONSHORE_KEY_ID'),       // key_…
     getenv('ONSHORE_PRIVATE_KEY'),  // base64 Ed25519 seed
@@ -56,7 +56,7 @@ An invalid key throws `InvalidArgumentException` at once. `$curlOptions` are add
 
 ```php
 $vault = new VaultClient($url, $sa, $key, $seed, 3, [
-    CURLOPT_CAINFO => '/etc/ssl/yourbank-ca.pem',
+    CURLOPT_CAINFO => '/etc/ssl/yourhost-ca.pem',
     CURLOPT_PROXY => 'http://proxy.internal:3128',
     CURLOPT_TIMEOUT => 5,
 ]);
@@ -241,7 +241,7 @@ Keys: `kind`, `origin`, `fields`, `tokens`, `purpose`, `on_behalf_of`, `subject_
 ```php
 Route::post('/api/id-form', function (Request $request, VaultClient $vault) {
     $t = $vault->createClientToken(VAULT, [
-        'kind' => 'collect', 'origin' => 'https://app.yourbank.example',
+        'kind' => 'collect', 'origin' => 'https://app.yourhost.example',
         'fields' => ['national_id'], 'subject_ref' => $request->user()->customer_id,
         'bind_ip' => $request->ip(),
     ]);

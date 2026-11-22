@@ -19,14 +19,14 @@ import { Callout, Steps, Tabs } from "nextra/components";
 
 ## Before you start
 
-1. In the console, open **Vaults → your vault → Secure components** and add every site that will show a frame, as an origin: `https://app.yourbank.example`. Only listed origins can frame the vault, and client tokens are tied to one of them.
+1. In the console, open **Vaults → your vault → Secure components** and add every site that will show a frame, as an origin: `https://app.yourhost.example`. Only listed origins can frame the vault, and client tokens are tied to one of them.
 2. Give the service account that mints client tokens an access rule allowing `tokenize` (for collect) or `detokenize` (for reveal) on the fields involved.
 3. Your server mints client tokens with [`createClientToken`](/developers/sdks/node/#createclienttoken) in any SDK.
 
 ## Load the script
 
 ```html
-<script src="https://vault.yourbank.example/embed/rv.js"></script>
+<script src="https://vault.yourhost.example/embed/rv.js"></script>
 ```
 
 The script works out the vault's address from its own `src`. If you bundle or self-host it (not recommended), pass `baseUrl` to each component.
@@ -34,8 +34,8 @@ The script works out the vault's address from its own `src`. If you bundle or se
 Content Security Policy on your page needs:
 
 ```
-script-src 'self' https://vault.yourbank.example;
-frame-src https://vault.yourbank.example;
+script-src 'self' https://vault.yourhost.example;
+frame-src https://vault.yourhost.example;
 ```
 
 ## Collect
@@ -48,7 +48,7 @@ frame-src https://vault.yourbank.example;
 // POST /api/id-form, for a signed-in customer
 const { client_token } = await vault.createClientToken(VAULT, {
   kind: "collect",
-  origin: "https://app.yourbank.example",
+  origin: "https://app.yourhost.example",
   fields: ["national_id", "iban"],      // up to 10
   subjectRef: user.customerId,
   bindIp: req.ip,
@@ -111,7 +111,7 @@ A format mistake is shown inside the frame and **doesn't use up the token**, so 
 // Server: check this agent may see this customer first. Then:
 const { client_token } = await vault.createClientToken(VAULT, {
   kind: "reveal",
-  origin: "https://support.yourbank.example",
+  origin: "https://support.yourhost.example",
   tokens: [customer.nino_token, customer.iban_token],   // up to 20
   purpose: `Ticket ${ticket.id}`,
   onBehalfOf: agent.email,
@@ -244,7 +244,7 @@ export function SecureIdForm({ clientToken, onTokens }: { clientToken: string; o
   );
 }
 ```
-Add `<script src="https://vault.yourbank.example/embed/rv.js" />` to your document head (in Next.js, `next/script` with `strategy="beforeInteractive"`).
+Add `<script src="https://vault.yourhost.example/embed/rv.js" />` to your document head (in Next.js, `next/script` with `strategy="beforeInteractive"`).
 </Tabs.Tab>
 <Tabs.Tab>
 ```vue
@@ -271,7 +271,7 @@ const save = async () => emit("tokens", await form.submit());
 <Tabs.Tab>
 ```html
 <!doctype html>
-<script src="https://vault.yourbank.example/embed/rv.js"></script>
+<script src="https://vault.yourhost.example/embed/rv.js"></script>
 <form id="f">
   <div id="secure"></div>
   <button>Save</button>
@@ -304,5 +304,5 @@ const save = async () => emit("tokens", await form.submit());
 The same install serves `rv-watch.js`, which reports which scripts load on a page (addresses without query strings; no form fields, cookies or page text) for [page protection](/guides/connections/page-protection/):
 
 ```html
-<script src="https://vault.yourbank.example/embed/rv-watch.js" data-page="pg_checkout_01" async></script>
+<script src="https://vault.yourhost.example/embed/rv-watch.js" data-page="pg_checkout_01" async></script>
 ```

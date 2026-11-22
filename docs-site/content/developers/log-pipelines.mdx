@@ -15,7 +15,7 @@ Create a log connection in the console first ([Logs](/guides/connections/logs/))
 # Swap one exporter endpoint.
 exporters:
   otlphttp/onshore:
-    endpoint: https://vault.yourbank.example/logs/otlp/<pipeline-id>
+    endpoint: https://vault.yourhost.example/logs/otlp/<pipeline-id>
     headers:
       X-RV-Pipeline-Key: <pipeline-key>
     # When the vault is unreachable the processor answers 503. These settings keep
@@ -35,7 +35,7 @@ OTLP over HTTP and gRPC are both accepted. Traces and metrics can go through the
 [OUTPUT]
     Name          http
     Match         *
-    Host          vault.yourbank.example
+    Host          vault.yourhost.example
     Port          443
     URI           /logs/http/<pipeline-id>
     Format        json_lines
@@ -51,7 +51,7 @@ OTLP over HTTP and gRPC are both accepted. Traces and metrics can go through the
 [sinks.onshore]
 type = "http"
 inputs = ["your_logs"]
-uri = "https://vault.yourbank.example/logs/http/<pipeline-id>"
+uri = "https://vault.yourhost.example/logs/http/<pipeline-id>"
 encoding.codec = "json"
 request.headers.X-RV-Pipeline-Key = "<pipeline-key>"
 request.retry_attempts = 9007199254740991

@@ -35,7 +35,7 @@ import os
 from onshore import VaultClient
 
 vault = VaultClient(
-    os.environ["ONSHORE_URL"],          # https://vault.yourbank.example
+    os.environ["ONSHORE_URL"],          # https://vault.yourhost.example
     os.environ["ONSHORE_SA_ID"],        # sa_…
     os.environ["ONSHORE_KEY_ID"],       # key_…
     os.environ["ONSHORE_PRIVATE_KEY"],  # base64 Ed25519 seed
@@ -63,7 +63,7 @@ VaultClient(base_url, service_account_id, key_id, private_key, *, max_attempts=4
 
 ```python
 import ssl
-ctx = ssl.create_default_context(cafile="/etc/ssl/yourbank-ca.pem")
+ctx = ssl.create_default_context(cafile="/etc/ssl/yourhost-ca.pem")
 vault = VaultClient(url, sa, key, secret, ssl_context=ctx, timeout=5.0)
 ```
 
@@ -421,7 +421,7 @@ from django.http import JsonResponse
 @login_required
 def id_form_token(request):
     t = vault.create_client_token(
-        VAULT, "collect", "https://app.yourbank.example",
+        VAULT, "collect", "https://app.yourhost.example",
         fields=["national_id"], subject_ref=request.user.customer_id,
         bind_ip=request.META["REMOTE_ADDR"],
     )
@@ -436,7 +436,7 @@ from fastapi.concurrency import run_in_threadpool
 @app.post("/api/id-form")
 async def id_form(request: Request, user=Depends(current_user)):
     t = await run_in_threadpool(
-        vault.create_client_token, VAULT, "collect", "https://app.yourbank.example",
+        vault.create_client_token, VAULT, "collect", "https://app.yourhost.example",
         fields=["national_id"], subject_ref=user.customer_id, bind_ip=request.client.host,
     )
     return {"clientToken": t["client_token"]}
@@ -451,7 +451,7 @@ def reveal(customer_id):
     if not current_user.may_view(customer):   # your check, before minting
         abort(403)
     t = vault.create_client_token(
-        VAULT, "reveal", "https://support.yourbank.example",
+        VAULT, "reveal", "https://support.yourhost.example",
         tokens=[customer.nino_token], purpose=f"Ticket {request.args['ticket']}",
         on_behalf_of=current_user.email, bind_ip=request.remote_addr,
     )

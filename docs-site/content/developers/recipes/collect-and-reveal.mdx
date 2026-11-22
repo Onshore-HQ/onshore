@@ -22,9 +22,9 @@ Browser / app          Your server                         Vault
 
 ## One-time setup
 
-1. **List your origins.** In **Vaults → your vault → Secure components**, add each website (`https://app.yourbank.example`) and each app (`rvapp://com.yourbank.wallet`).
+1. **List your origins.** In **Vaults → your vault → Secure components**, add each website (`https://app.yourhost.example`) and each app (`rvapp://com.yourhost.wallet`).
 2. **A service account for minting.** Give it an access rule allowing `tokenize` on the fields you collect, and `detokenize` (with the decision you want people to see) on the fields you reveal.
-3. **Content Security Policy** on your web pages: `script-src https://vault.yourbank.example; frame-src https://vault.yourbank.example`.
+3. **Content Security Policy** on your web pages: `script-src https://vault.yourhost.example; frame-src https://vault.yourhost.example`.
 
 ## Collect an ID number
 
@@ -38,7 +38,7 @@ Browser / app          Your server                         Vault
 app.post("/api/secure/collect-id", requireUser, async (req, res) => {
   const { client_token, expires_at } = await vault.createClientToken(VAULT, {
     kind: "collect",
-    origin: req.get("x-app-origin") === "ios" ? "rvapp://com.yourbank.wallet" : "https://app.yourbank.example",
+    origin: req.get("x-app-origin") === "ios" ? "rvapp://com.yourhost.wallet" : "https://app.yourhost.example",
     fields: ["national_id"],
     subjectRef: req.user.customerId,  // ties the stored value to this customer
     bindIp: req.ip,                   // only this address can use the token
@@ -52,7 +52,7 @@ app.post("/api/secure/collect-id", requireUser, async (req, res) => {
 ```python
 @app.post("/api/secure/collect-id")
 def collect_id(request: Request, user=Depends(current_user)):
-    t = vault.create_client_token(VAULT, "collect", "https://app.yourbank.example",
+    t = vault.create_client_token(VAULT, "collect", "https://app.yourhost.example",
                                   fields=["national_id"], subject_ref=user.customer_id,
                                   bind_ip=request.client.host, ttl_seconds=300)
     return {"clientToken": t["client_token"], "expiresAt": t["expires_at"]}
@@ -61,7 +61,7 @@ def collect_id(request: Request, user=Depends(current_user)):
 <Tabs.Tab>
 ```go
 t, err := client.CreateClientToken(r.Context(), vaultID, vault.ClientTokenRequest{
-    Kind: "collect", Origin: "https://app.yourbank.example", Fields: []string{"national_id"},
+    Kind: "collect", Origin: "https://app.yourhost.example", Fields: []string{"national_id"},
     SubjectRef: user.CustomerID, BindIP: clientIP(r), TTLSeconds: 300,
 })
 ```
@@ -136,7 +136,7 @@ app.post("/api/secure/reveal/:customerId", requireAgent, async (req, res) => {
 
   const { client_token } = await vault.createClientToken(VAULT, {
     kind: "reveal",
-    origin: "https://support.yourbank.example",
+    origin: "https://support.yourhost.example",
     tokens: [customer.national_id_token, customer.iban_token],
     purpose: `Ticket ${ticket.id}`,
     onBehalfOf: req.agent.email,

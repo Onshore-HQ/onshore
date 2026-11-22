@@ -44,7 +44,7 @@ You get the rows back with tokens. It exists only in the tab until you download 
 Better for large files; it can stop and carry on.
 
 ```sh
-rv import -url https://vault.yourbank.example -vault v_live_… \
+rv import -url https://vault.yourhost.example -vault v_live_… \
   -sa sa_migration -key-id key_01 -key-file migration.seed \
   -file customers.csv -map national_id=national_id,phone=phone -ref customer_id -check
 ```

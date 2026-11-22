@@ -15,7 +15,7 @@ scrape_configs:
     scheme: https
     metrics_path: /control/v1/monitoring/metrics
     authorization: { type: Bearer, credentials_file: /etc/prometheus/onshore-metrics-key }
-    static_configs: [{ targets: ["vault.yourbank.example"] }]
+    static_configs: [{ targets: ["vault.yourhost.example"] }]
 ```
 
 | Metric | Meaning |

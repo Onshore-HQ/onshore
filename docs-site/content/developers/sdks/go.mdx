@@ -30,7 +30,7 @@ go get github.com/Onshore-HQ/onshore-go@v0.1.0
 import vault "github.com/Onshore-HQ/onshore-go"
 
 client, err := vault.New(
-    os.Getenv("ONSHORE_URL"),          // https://vault.yourbank.example
+    os.Getenv("ONSHORE_URL"),          // https://vault.yourhost.example
     os.Getenv("ONSHORE_SA_ID"),        // sa_…
     os.Getenv("ONSHORE_KEY_ID"),       // key_…
     os.Getenv("ONSHORE_PRIVATE_KEY"),  // base64 Ed25519 seed
@@ -351,7 +351,7 @@ func idFormToken(w http.ResponseWriter, r *http.Request) {
     user := auth.User(r)
     ip, _, _ := net.SplitHostPort(r.RemoteAddr)
     t, err := client.CreateClientToken(r.Context(), vaultID, vault.ClientTokenRequest{
-        Kind: "collect", Origin: "https://app.yourbank.example",
+        Kind: "collect", Origin: "https://app.yourhost.example",
         Fields: []string{"national_id"}, SubjectRef: user.CustomerID, BindIP: ip,
     })
     if err != nil {

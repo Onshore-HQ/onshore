@@ -87,7 +87,7 @@ export function SsoCard({ allowed }: { allowed: boolean }) {
             </div>
           )}
           {p.kinds.length > 1 && <label className="field"><span>{tr("Protocol")}</span><select value={f.kind} onChange={set("kind")}>{p.kinds.map((k) => <option key={k} value={k}>{k === "oidc" ? tr("OIDC") : tr("SAML 2.0")}</option>)}</select></label>}
-          <label className="field"><span>{tr("Email domains, comma-separated")}</span><input value={f.email_domains} onChange={set("email_domains")} placeholder="yourbank.example" /></label>
+          <label className="field"><span>{tr("Email domains, comma-separated")}</span><input value={f.email_domains} onChange={set("email_domains")} placeholder="yourhost.example" /></label>
           {f.kind === "oidc" ? (
             <>
               <label className="field"><span>{tr("Issuer URL")}</span><input value={f.issuer} onChange={set("issuer")} placeholder={p.issuer} /></label>

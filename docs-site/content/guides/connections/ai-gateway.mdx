@@ -35,7 +35,7 @@ You get a route address and a **route key**. Change your client's base URL and s
 
 ```python
 client = OpenAI(
-    base_url="https://vault.yourbank.example/ai/air_…/v1",   # was the provider's URL
+    base_url="https://vault.yourhost.example/ai/air_…/v1",   # was the provider's URL
     default_headers={"X-RV-Route-Key": ROUTE_KEY},
 )
 ```

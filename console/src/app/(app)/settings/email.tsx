@@ -41,7 +41,7 @@ export function EmailCard() {
       {msg && <div className="note good">{msg}</div>}
       <ErrorLine error={err} />
       <div className="row flex-wrap items-end">
-        <label className="field min-w-56 flex-1"><span>{tr("Mail server")}</span><input placeholder="smtp.yourbank.example" value={f.host} onChange={set("host")} /></label>
+        <label className="field min-w-56 flex-1"><span>{tr("Mail server")}</span><input placeholder="smtp.yourhost.example" value={f.host} onChange={set("host")} /></label>
         <label className="field w-48"><span>{tr("Security")}</span>
           <select value={f.tls_mode} onChange={(e) => setF({ ...f, tls_mode: e.target.value, port: PORTS[e.target.value]!, ...(e.target.value === "none" ? { username: "", password: "" } : {}) })}>
             <option value="starttls">{tr("STARTTLS (usual)")}</option><option value="tls">{tr("TLS from the start")}</option><option value="none">{tr("None, internal relay only")}</option>
@@ -57,7 +57,7 @@ export function EmailCard() {
         </div>
       )}
       <div className="row flex-wrap">
-        <label className="field min-w-56 flex-1"><span>{tr("Send from")}</span><input type="email" placeholder={tr("onshore@yourbank.example")} value={f.from_address} onChange={set("from_address")} /></label>
+        <label className="field min-w-56 flex-1"><span>{tr("Send from")}</span><input type="email" placeholder={tr("onshore@yourhost.example")} value={f.from_address} onChange={set("from_address")} /></label>
         <label className="field min-w-56 flex-1"><span>{tr("Sender name")}</span><input value={f.from_name} onChange={set("from_name")} /></label>
       </div>
       <label className="field"><span>{tr("This console's address, used in email links")}</span><input type="url" value={f.console_url} onChange={set("console_url")} /></label>

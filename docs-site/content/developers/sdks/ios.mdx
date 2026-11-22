@@ -37,7 +37,7 @@ targets: [
 
 ### List your app as an origin
 
-In **Vaults → Secure components**, add `rvapp://` followed by your bundle ID in lower case: `rvapp://com.yourbank.wallet`.
+In **Vaults → Secure components**, add `rvapp://` followed by your bundle ID in lower case: `rvapp://com.yourhost.wallet`.
 
 ### Mint client tokens on your server
 
@@ -45,7 +45,7 @@ Your app asks your own API, which checks the signed-in user and mints a token:
 
 ```ts
 const { client_token } = await vault.createClientToken(VAULT, {
-  kind: "collect", origin: "rvapp://com.yourbank.wallet",
+  kind: "collect", origin: "rvapp://com.yourhost.wallet",
   fields: ["national_id"], subjectRef: user.customerId,
 });
 ```
@@ -56,8 +56,8 @@ const { client_token } = await vault.createClientToken(VAULT, {
 import Onshore
 
 let onshore = SecureClient(
-    baseURL: URL(string: "https://vault.yourbank.example")!,
-    appOrigin: "rvapp://com.yourbank.wallet"
+    baseURL: URL(string: "https://vault.yourhost.example")!,
+    appOrigin: "rvapp://com.yourhost.wallet"
 )
 ```
 
@@ -175,7 +175,7 @@ final class Pinner: NSObject, URLSessionDelegate {
 let config = URLSessionConfiguration.ephemeral
 config.urlCache = nil
 let session = URLSession(configuration: config, delegate: Pinner(pinned: ["…"]), delegateQueue: nil)
-let onshore = SecureClient(baseURL: vaultURL, appOrigin: "rvapp://com.yourbank.wallet", session: session)
+let onshore = SecureClient(baseURL: vaultURL, appOrigin: "rvapp://com.yourhost.wallet", session: session)
 ```
 
 ## UIKit

@@ -32,7 +32,7 @@ info:
   contact: { name: Onshore, url: "https://onshorevault.com/contact/" }
   license: { name: Open source, url: "https://onshorevault.com" }
 servers:
-  - url: https://vault.yourbank.example
+  - url: https://vault.yourhost.example
     description: "Your install"
   - url: https://vault.gb.onshorevault.com
     description: "Onshore Cloud, United Kingdom region"
@@ -592,7 +592,7 @@ paths:
               required: [kind, origin]
               properties:
                 kind: { type: string, enum: [collect, reveal] }
-                origin: { type: string, description: "`https://…` for a site, or `rvapp://<app id>` for a mobile app.", example: "https://app.yourbank.example" }
+                origin: { type: string, description: "`https://…` for a site, or `rvapp://<app id>` for a mobile app.", example: "https://app.yourhost.example" }
                 fields: { type: array, items: { type: string }, maxItems: 10, description: "For collect." }
                 tokens: { type: array, items: { type: string }, maxItems: 20, description: "For reveal." }
                 purpose: { type: string, description: "Required for reveal." }
@@ -601,8 +601,8 @@ paths:
                 bind_ip: { type: string, description: "Only this IP address may redeem the token." }
                 ttl_seconds: { type: integer, default: 120, maximum: 600 }
             examples:
-              collect: { value: { kind: collect, origin: "https://app.yourbank.example", fields: [national_id], subject_ref: cust_1042 } }
-              reveal: { value: { kind: reveal, origin: "https://app.yourbank.example", tokens: [tok_uk_nino_7Hq2xP9LmA4c], purpose: Support ticket 7, on_behalf_of: agent ada, bind_ip: 203.0.113.7 } }
+              collect: { value: { kind: collect, origin: "https://app.yourhost.example", fields: [national_id], subject_ref: cust_1042 } }
+              reveal: { value: { kind: reveal, origin: "https://app.yourhost.example", tokens: [tok_uk_nino_7Hq2xP9LmA4c], purpose: Support ticket 7, on_behalf_of: agent ada, bind_ip: 203.0.113.7 } }
       responses:
         "200": { description: "The client token.", content: { application/json: { schema: { type: object, properties: { client_token: { type: string, example: rvct_9f2k… }, expires_at: { type: string, format: date-time }, request_id: { type: string } } } } } }
         "400": { description: "The origin isn't allowed, or the request is malformed." }

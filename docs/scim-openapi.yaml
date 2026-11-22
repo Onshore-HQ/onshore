@@ -11,7 +11,7 @@ info:
     Errors use SCIM's format: `{"schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"], "status", "scimType", "detail"}`.
     Not supported: bulk, sorting, ETags, password changes.
 servers:
-  - url: https://vault.yourbank.example/control/scim/v2
+  - url: https://vault.yourhost.example/control/scim/v2
 security: [{ bearer: [] }]
 tags:
   - name: Discovery
@@ -27,7 +27,7 @@ components:
         schemas: { type: array, items: { type: string }, example: ["urn:ietf:params:scim:schemas:core:2.0:User"] }
         id: { type: string, readOnly: true }
         externalId: { type: string }
-        userName: { type: string, description: "Must be an email address (or give a primary email).", example: erin@yourbank.example }
+        userName: { type: string, description: "Must be an email address (or give a primary email).", example: erin@yourhost.example }
         displayName: { type: string }
         name: { type: object, properties: { formatted: { type: string }, givenName: { type: string }, familyName: { type: string } } }
         emails: { type: array, items: { type: object, properties: { value: { type: string }, type: { type: string }, primary: { type: boolean } } } }
@@ -63,7 +63,7 @@ components:
         itemsPerPage: { type: integer }
         Resources: { type: array, items: {} }
   parameters:
-    filter: { name: filter, in: query, description: "Only `attribute eq \"value\"`.", schema: { type: string, example: "userName eq \"erin@yourbank.example\"" } }
+    filter: { name: filter, in: query, description: "Only `attribute eq \"value\"`.", schema: { type: string, example: "userName eq \"erin@yourhost.example\"" } }
     startIndex: { name: startIndex, in: query, schema: { type: integer, default: 1 } }
     count: { name: count, in: query, schema: { type: integer, default: 100, maximum: 200 } }
 paths:
@@ -84,7 +84,7 @@ paths:
       tags: [Users]
       summary: "Create a user"
       description: "Creates an account with no password and no roles until groups map to roles. If the email belongs to a user removed earlier, that account is restored."
-      requestBody: { required: true, content: { application/scim+json: { schema: { $ref: "#/components/schemas/User" }, example: { schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"], externalId: 0a1b2c3d, userName: erin@yourbank.example, active: true, name: { givenName: Erin, familyName: Sync } } } } }
+      requestBody: { required: true, content: { application/scim+json: { schema: { $ref: "#/components/schemas/User" }, example: { schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"], externalId: 0a1b2c3d, userName: erin@yourhost.example, active: true, name: { givenName: Erin, familyName: Sync } } } } }
       responses:
         "201": { description: "Created.", content: { application/scim+json: { schema: { $ref: "#/components/schemas/User" } } } }
         "409": { description: "`uniqueness`: a user with that userName exists." }

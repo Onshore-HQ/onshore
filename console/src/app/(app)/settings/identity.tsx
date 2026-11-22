@@ -115,16 +115,16 @@ export function LdapCard({ id, onChange }: { id: Identity; onChange: () => void 
         <>
           <p className="small muted">{tr("For directories without single sign-on. Only encrypted connections are allowed: ldaps://, or ldap:// with StartTLS. Local accounts, such as your own, keep their password.")}</p>
           <div className="row"><button onClick={() => setF({ ...f, ...AD })}>{tr("Use Active Directory defaults")}</button></div>
-          <label className="field"><span>{tr("Directory URL")}</span><input value={f.url} onChange={set("url")} placeholder="ldaps://dc1.yourbank.example:636" /></label>
+          <label className="field"><span>{tr("Directory URL")}</span><input value={f.url} onChange={set("url")} placeholder="ldaps://dc1.yourhost.example:636" /></label>
           <label className="row small"><input type="checkbox" checked={f.start_tls} onChange={(e) => setF({ ...f, start_tls: e.target.checked })} />{tr("Upgrade ldap:// with StartTLS")}</label>
           <label className="field"><span>{tr("CA certificate, if your directory uses a private one (PEM)")}</span><textarea className="code" rows={3} value={f.ca_cert} onChange={set("ca_cert")} /></label>
-          <label className="field"><span>{tr("Service account DN")}</span><input value={f.bind_dn} onChange={set("bind_dn")} placeholder={tr("CN=svc-onshore,OU=Service,DC=yourbank,DC=example")} /></label>
+          <label className="field"><span>{tr("Service account DN")}</span><input value={f.bind_dn} onChange={set("bind_dn")} placeholder={tr("CN=svc-onshore,OU=Service,DC=yourhost,DC=example")} /></label>
           <label className="field"><span>{c ? tr("Service account password (leave empty to keep the saved one)") : tr("Service account password")}</span><input type="password" value={f.bind_password} onChange={set("bind_password")} /></label>
-          <label className="field"><span>{tr("Where to look for people (base DN)")}</span><input value={f.base_dn} onChange={set("base_dn")} placeholder={tr("OU=Staff,DC=yourbank,DC=example")} /></label>
+          <label className="field"><span>{tr("Where to look for people (base DN)")}</span><input value={f.base_dn} onChange={set("base_dn")} placeholder={tr("OU=Staff,DC=yourhost,DC=example")} /></label>
           <label className="field"><span>{tr("User filter, with {email} where the address goes")}</span><input className="mono" value={f.user_filter} onChange={set("user_filter")} /></label>
-          <label className="field"><span>{tr("Where to look for groups (optional; memberOf is read either way)")}</span><input value={f.group_base_dn} onChange={set("group_base_dn")} placeholder={tr("OU=Groups,DC=yourbank,DC=example")} /></label>
+          <label className="field"><span>{tr("Where to look for groups (optional; memberOf is read either way)")}</span><input value={f.group_base_dn} onChange={set("group_base_dn")} placeholder={tr("OU=Groups,DC=yourhost,DC=example")} /></label>
           <label className="field"><span>{tr("Group filter, with {dn} for the person")}</span><input className="mono" value={f.group_filter} onChange={set("group_filter")} /></label>
-          <label className="field"><span>{tr("Email domains, comma-separated")}</span><input value={f.email_domains} onChange={set("email_domains")} placeholder="yourbank.example" /></label>
+          <label className="field"><span>{tr("Email domains, comma-separated")}</span><input value={f.email_domains} onChange={set("email_domains")} placeholder="yourhost.example" /></label>
           <label className="row small"><input type="checkbox" checked={f.jit_provisioning} onChange={(e) => setF({ ...f, jit_provisioning: e.target.checked })} />{tr("Create an account on first sign-in when one of the person's groups maps to a role")}</label>
           <div className="grid gap-2 rounded-md border p-3" style={{ borderColor: "var(--border)" }}>
             <div className="row"><input style={{ flex: 1 }} value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder={tr("Someone's email, to look them up")} /><button onClick={async () => { setErr(null); setTest(null); try { setTest(await control("/v1/settings/ldap/test", { body: { email: testEmail || undefined, config: body() } })); } catch (e) { setErr(errText(e)); } }}>{tr("Test connection")}</button></div>

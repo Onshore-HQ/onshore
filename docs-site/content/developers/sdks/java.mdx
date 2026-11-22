@@ -52,7 +52,7 @@ implementation("com.onshorevault:onshore-sdk:0.1.0")
 import ng.onshore.VaultClient;
 
 VaultClient vault = new VaultClient(
-    System.getenv("ONSHORE_URL"),         // https://vault.yourbank.example
+    System.getenv("ONSHORE_URL"),         // https://vault.yourhost.example
     System.getenv("ONSHORE_SA_ID"),       // sa_…
     System.getenv("ONSHORE_KEY_ID"),      // key_…
     System.getenv("ONSHORE_PRIVATE_KEY"), // base64 Ed25519 seed
@@ -77,7 +77,7 @@ An invalid key throws `IllegalArgumentException` (or a key exception) from the c
 
 ```java
 HttpClient http = HttpClient.newBuilder()
-    .sslContext(sslContextTrusting("/etc/ssl/yourbank-ca.pem"))
+    .sslContext(sslContextTrusting("/etc/ssl/yourhost-ca.pem"))
     .proxy(ProxySelector.of(new InetSocketAddress("proxy.internal", 3128)))
     .connectTimeout(Duration.ofSeconds(3))
     .build();
@@ -271,7 +271,7 @@ record ClientToken(String clientToken, String expiresAt)
 @PostMapping("/api/id-form")
 Map<String, String> idForm(@AuthenticationPrincipal User user, HttpServletRequest req) throws Exception {
     var t = vault.createClientToken(VAULT,
-        VaultClient.ClientTokenRequest.collect("https://app.yourbank.example", List.of("national_id"), user.customerId())
+        VaultClient.ClientTokenRequest.collect("https://app.yourhost.example", List.of("national_id"), user.customerId())
             .withBindIp(req.getRemoteAddr()));
     return Map.of("clientToken", t.clientToken());
 }

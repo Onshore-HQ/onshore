@@ -41,7 +41,7 @@ You get an **address to call** and a **route key**. Swap the vendor's URL for th
 
 ```sh
 # Before: https://api.kyc-vendor.example/v2/verify
-curl https://vault.yourbank.example/proxy/$ROUTE_ID/v2/verify \
+curl https://vault.yourhost.example/proxy/$ROUTE_ID/v2/verify \
   -H "X-RV-Route-Key: $ROUTE_KEY" -H "Content-Type: application/json" \
   -d '{"customer":{"national_id":"AB123456C"}}'
 # The vendor receives {"customer":{"national_id":"tok_uk_nino_…"}}

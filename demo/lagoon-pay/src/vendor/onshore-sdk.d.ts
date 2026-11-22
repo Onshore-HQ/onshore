@@ -1,5 +1,5 @@
 export interface VaultClientOptions {
-    /** Base URL of your vault, for example https://vault.yourbank.ng */
+    /** Base URL of your vault, for example https://vault.yourhost.ng */
     baseUrl: string;
     serviceAccountId: string;
     keyId: string;
