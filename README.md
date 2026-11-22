@@ -24,9 +24,6 @@ When you're breached, attackers get tokens instead of your customers' identities
   <img alt="The Onshore console home: alerts to review, connections, values protected and real values viewed" src=".github/assets/overview.png" width="100%">
 </p>
 
-> [!WARNING]
-> **Early access.** Onshore must not hold real customer data yet. It has had an internal penetration test only, no independent one, and no certifications. See [`docs/known-gaps.md`](docs/known-gaps.md) and [`docs/pentest-report.md`](docs/pentest-report.md).
-
 ## What Onshore does
 
 **Core**

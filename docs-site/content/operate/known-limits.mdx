@@ -1,21 +1,15 @@
 ---
 title: Known limits
-description: What has been tested, what hasn't, and what must be closed before real customer data goes in.
+description: What has been tested, and what hasn't.
 ---
 
-import { Callout } from "nextra/components";
 
 # Known limits
 
-Onshore is in early access. This page says plainly what has and hasn't been tested, so you can decide what matters for you.
+This page says plainly what has and hasn't been tested, so you can decide what matters for you.
 
-<Callout type="error">
-**Don't load real customer data yet.** Onshore hasn't had an independent penetration test, and most testing has been on one machine against stand-ins for real vendors.
-</Callout>
+## Not yet tested
 
-## Must close before real customer data
-
-- **An independent penetration test.** Internal attack suites have run repeatedly; they don't replace an outside test.
 - **Support tool adapters against live accounts.** All four are tested only against stand-ins.
 - **Performance on real hardware.** Tokenize at 10 concurrent clients is close to, but above, its 30 ms target on a laptop.
 - **Mobile SDKs on real devices.** Only an emulator and a simulator so far.
