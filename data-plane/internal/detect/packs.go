@@ -76,6 +76,24 @@ const amountNumber = `\d{1,3}(?:[,. \x{00A0}]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\
 
 var amountRule = packRule{AmountMoney, rx(`(?i)` + currencyBefore + `\s?(?:` + amountNumber + `)(?:\s?(?:k|m|bn|million|billion|thousand)\b)?|\b(?:` + amountNumber + `)\s?` + currencyAfter + `\b`), nil, 0.85, 0.95, []string{"paid", "pay", "amount", "balance", "transfer", "debited", "credited", "salary", "price", "cost", "fee", "refund", "owe"}}
 
+// currencyMarks are the lower-cased markers every amount match contains. A line
+// without any of them can't hold an amount, so the pattern is skipped: without
+// this check it tries to start an amount at every digit, which made it the
+// slowest pattern by far on ordinary log lines.
+var currencyMarks = []string{"$", "€", "£", "₹", "₵", "¢", "﷼", "ksh", "usd", "eur", "gbp", "cad", "aud", "sgd", "brl", "inr", "ghs", "kes", "zar", "egp", "aed", "sar", "qar", "chf", "jpy", "cny", "dollar", "pound", "dirham", "riyal", "rand", "rupee", "reais", "shilling", "cedi"}
+
+// prefilters skip a pattern on text that holds none of its markers.
+var prefilters = map[*regexp.Regexp][]string{amountRule.re: currencyMarks}
+
+func containsAny(lower string, marks []string) bool {
+	for _, m := range marks {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // E.164: a plus, a country code and the rest. Any country, so it sits in "everywhere".
 var intlPhoneRule = packRule{PhoneIntl, rx(`\+[1-9]\d{0,2}[ -]?\(?\d{1,4}\)?(?:[ -]?\d){5,11}\b`), func(r string) bool { n := digitsOnly(r); return len(n) >= 8 && len(n) <= 15 }, 0.75, 0.95, phoneCues}
 
@@ -236,6 +254,9 @@ func (e *Engine) ScanPacks(text string, packs []string) []Entity {
 				continue // IBAN and +1 phones sit in several packs
 			}
 			done[key] = true
+			if marks, ok := prefilters[r.re]; ok && !containsAny(lower, marks) {
+				continue
+			}
 			for _, m := range r.re.FindAllStringIndex(text, -1) {
 				end := m[1]
 				if !isolated(text, m[0], end) {
