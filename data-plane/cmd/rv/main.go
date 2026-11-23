@@ -544,7 +544,12 @@ func cmdDoctor(args []string) error {
 	}
 	lic := env["RV_LICENCE"]
 	if lic == "" {
-		check("licence", errors.New("no licence installed"))
+		// Community needs no licence; it isn't a failure.
+		if _, err := license.BuiltInKey(); err != nil {
+			fmt.Printf("INFO  %-22s %s\n", "licence", "development build: paid features on for development and testing")
+		} else {
+			fmt.Printf("INFO  %-22s %s\n", "licence", "none: Community edition")
+		}
 	} else if key, err := license.BuiltInKey(); err != nil {
 		check("licence", err)
 	} else if l, err := license.Verify(lic, key); err != nil {

@@ -58,6 +58,8 @@ When you're breached, attackers get tokens instead of your customers' identities
 
 ## Quick start
 
+You need Docker with Compose v2, and Go 1.27 or later for the log scan.
+
 **See what's in your logs**, offline, without changing anything:
 
 ```sh
@@ -75,6 +77,8 @@ docker compose up -d keys postgres
 docker compose --profile logs --profile ai --profile proxy up -d
 ./rv doctor                                        # pass/fail report for your change ticket
 ```
+
+To try it on your own machine, use `--host localhost`; your browser will warn about the certificate, because the install makes its own until you add yours.
 
 Open `https://<host>/`, run first-time setup with the bootstrap token, and follow the [setup guide](https://docs.onshorevault.com/get-started/).
 
