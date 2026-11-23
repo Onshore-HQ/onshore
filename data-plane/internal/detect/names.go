@@ -37,5 +37,13 @@ var nameStopwords = map[string]bool{
 	"thanks": true, "regards": true, "first": true, "access": true, "union": true, "zenith": true, "sterling": true, "wema": true, "polaris": true, "lagos": true, "abuja": true, "nigeria": true, "street": true, "road": true, "limited": true, "ltd": true, "plc": true,
 	"service": true, "services": true, "team": true, "support": true, "office": true, "department": true, "officer": true, "desk": true, "center": true, "centre": true, "manager": true, "branch": true, "care": true, "agent": true, "group": true, "company": true,
 	"january": true, "february": true, "march": true, "april": true, "may": true, "june": true, "july": true, "august": true, "september": true, "october": true, "november": true, "december": true,
+	// Verbs and nouns that open a sentence or a note ("Refund Sarah Johnson", "Email
+	// her"), capitalised there but never a name. Words that are also first names
+	// (Bill, Will, Mark, Grant, Chase) stay out.
+	"refund": true, "email": true, "call": true, "contact": true, "send": true, "check": true, "ask": true, "tell": true,
+	"cancel": true, "update": true, "verify": true, "confirm": true, "charge": true, "pay": true, "notify": true, "remind": true,
+	"invoice": true, "order": true, "ticket": true, "note": true, "urgent": true, "client": true, "patient": true, "attn": true,
+	"approve": true, "block": true, "unblock": true, "close": true, "reset": true, "review": true, "escalate": true, "message": true,
+	"re": true, "fw": true, "fwd": true, "kindly": true, "contacted": true, "called": true, "emailed": true, "refunded": true, "charged": true,
 	"monday": true, "tuesday": true, "wednesday": true, "thursday": true, "saturday": true, "mr": true, "mrs": true, "miss": true, "ms": true, "dr": true, "chief": true, "alhaji": true, "alhaja": true, "engr": true, "prof": true, "sir": true, "madam": true, "mallam": true,
 }
