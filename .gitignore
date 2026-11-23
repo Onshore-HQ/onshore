@@ -35,6 +35,7 @@ licence.e2e
 
 # Pitch, research, AI notes and planning specs (not part of the product)
 /pitch/
+/articles/
 /research_notes/
 /reports/
 /.backups/
