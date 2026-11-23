@@ -5,6 +5,7 @@ export default {
   connections: "Connections",
   "data-types": "Data types",
   "country-packs": "Country packs",
+  "language-models": "Language models",
   vaults: "Vaults",
   "redact-a-file": "Redact a file",
   "customer-records": "Customer records",

@@ -68,7 +68,7 @@ func Client(cert, key, ca string, timeout time.Duration) (*http.Client, error) {
 }
 
 // Services lists who gets an internal certificate; each name is also its DNS name.
-var Services = []string{"edge", "vault-api", "control-api", "console", "log-processor", "ai-gateway", "http-proxy", "adapters", "file-redactor", "postgres", "keys", "tools"}
+var Services = []string{"edge", "vault-api", "control-api", "console", "log-processor", "ai-gateway", "http-proxy", "adapters", "file-redactor", "nlp", "postgres", "keys", "tools"}
 
 // IssueAll writes a CA and a certificate per service under dir/<service>/. The CA
 // private key is discarded once the leaves exist, so no later certificate can be

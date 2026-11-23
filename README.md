@@ -27,7 +27,7 @@ When you're breached, attackers get tokens instead of your customers' identities
 
 **Core**
 - **Vault.** Each value is encrypted on its own; keys live in a separate key service (3 of 5 key holders to unseal) or your own HSM. Your systems store tokens.
-- **Detection.** Finds sensitive values in text, logs and files, with country packs for the US, UK, EU, Canada, Brazil, India, Singapore, the Gulf and Africa, and data types of your own.
+- **Detection.** Finds sensitive values in text, logs and files, with country packs for the US, UK, EU, Canada, Brazil, India, Singapore, the Gulf and Africa, and data types of your own. Optionally adds language models (spaCy, transformers or Stanza) to find names and places in free text.
 - **Access rules.** Default deny. Who may see what, plaintext or masked, for which purpose, from which network, at what time, up to how many an hour.
 - **Audit and evidence.** A hash-chained audit log with signed checkpoints, and signed reports for regulators.
 
@@ -35,7 +35,7 @@ When you're breached, attackers get tokens instead of your customers' identities
 - **Log pipelines** tokenize identifiers before logs reach outside tools.
 - **AI gateway and cloaking** send prompts to any model without identifiers, and restore the replies for people allowed to see them.
 - **HTTP proxy** tokenizes values in calls to outside vendors, in JSON, forms, XML and files.
-- **Support tool adapters** and **file redaction** clean tickets and documents.
+- **Support tool adapters** and **file redaction** clean tickets, documents, scans, recordings and DICOM medical images.
 
 **Collect and prove**
 - **Secure components** collect and show values in a frame served by the vault (web, iOS, Android, React Native), so your servers never see them.

@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"onshore/data-plane/internal/detect"
+	"onshore/data-plane/internal/license"
 )
 
 // Channel is the PostgreSQL NOTIFY channel; the payload is a vault id.
@@ -39,7 +40,15 @@ type Snapshot struct {
 	// Country and Packs say which built-in detectors apply. Nil Packs means all.
 	Country string   `json:"country,omitempty"`
 	Packs   []string `json:"packs,omitempty"`
+	// Models lists the modules where language models add to the patterns (paid).
+	Models []string `json:"models,omitempty"`
+	// Sandbox vaults may use paid features for development and testing.
+	Sandbox bool `json:"sandbox,omitempty"`
 }
+
+// NewModelFinder returns the install's language-model finder, or nil. The ee/nlp
+// package sets it when a service imports it; without that, models are never used.
+var NewModelFinder func() detect.ModelFinder
 
 // Source supplies versions and snapshots.
 type Source interface {
@@ -151,7 +160,13 @@ func Compile(snap *Snapshot, newEngine func(map[string]float64) *detect.Engine) 
 	if err != nil {
 		return nil, err
 	}
-	return rs.WithPacks(snap.Country, snap.Packs), nil
+	rs = rs.WithPacks(snap.Country, snap.Packs)
+	if len(snap.Models) > 0 && NewModelFinder != nil && (snap.Sandbox || license.Current().Has(license.Business)) {
+		if f := NewModelFinder(); f != nil {
+			rs = rs.WithModel(f, snap.Models)
+		}
+	}
+	return rs, nil
 }
 
 // Notify asks the run loop to sync now. It never blocks.

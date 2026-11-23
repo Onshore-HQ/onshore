@@ -24,7 +24,7 @@ export default function Files() {
   const list = vaults.value?.vaults ?? [];
   useEffect(() => { if (!vault && list[0]) setVault(list[0].id); }, [list, vault]);
   return (
-    <Page title={tr("Redact a file")} sub={tr("Upload a PDF, image, recording or text file, and download a copy with sensitive data removed. Onshore keeps nothing. PDFs come back as pictures of their pages, so no hidden text survives.")}>
+    <Page title={tr("Redact a file")} sub={tr("Upload a PDF, image, recording, DICOM medical image or text file, and download a copy with sensitive data removed. Onshore keeps nothing. PDFs come back as pictures of their pages, so no hidden text survives.")}>
       <div className="card" style={{ maxWidth: 620 }}>
         <label className="field"><span>{tr("Vault, for policy and audit")}</span><select value={vault} onChange={(e) => setVault(e.target.value)}>{list.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
         <label className="field"><span>{tr("Purpose or ticket ID")}</span><input value={purpose} onChange={(e) => setPurpose(e.target.value)} /></label>

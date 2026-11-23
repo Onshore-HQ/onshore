@@ -53,6 +53,8 @@ services:
       RV_TLS_CERT: /tls/cert.pem
       RV_TLS_KEY: /tls/key.pem
       RV_TLS_CLIENT_CA: /tls/ca.pem
+      # Language-model detection (paid): https://nlp:8095 with --profile nlp.
+      RV_NLP_URL: ${RV_NLP_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -162,6 +164,8 @@ services:
       RV_TLS_CERT: /tls/cert.pem
       RV_TLS_KEY: /tls/key.pem
       RV_TLS_CLIENT_CA: /tls/ca.pem
+      # Language-model detection (paid): https://nlp:8095 with --profile nlp.
+      RV_NLP_URL: ${RV_NLP_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -179,6 +183,8 @@ services:
       RV_TLS_CERT: /tls/cert.pem
       RV_TLS_KEY: /tls/key.pem
       RV_TLS_CLIENT_CA: /tls/ca.pem
+      # Language-model detection (paid): https://nlp:8095 with --profile nlp.
+      RV_NLP_URL: ${RV_NLP_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -197,6 +203,8 @@ services:
       RV_TLS_CERT: /tls/cert.pem
       RV_TLS_KEY: /tls/key.pem
       RV_TLS_CLIENT_CA: /tls/ca.pem
+      # Language-model detection (paid): https://nlp:8095 with --profile nlp.
+      RV_NLP_URL: ${RV_NLP_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -215,6 +223,8 @@ services:
       RV_TLS_CERT: /tls/cert.pem
       RV_TLS_KEY: /tls/key.pem
       RV_TLS_CLIENT_CA: /tls/ca.pem
+      # Language-model detection (paid): https://nlp:8095 with --profile nlp.
+      RV_NLP_URL: ${RV_NLP_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -232,6 +242,28 @@ services:
     environment:
       VAULT_INTERNAL_URL: https://vault-api:8080
       RV_INTERNAL_TOKEN: ${RV_INTERNAL_TOKEN}
+      RV_TLS_CERT: /tls/cert.pem
+      RV_TLS_KEY: /tls/key.pem
+      RV_TLS_CLIENT_CA: /tls/ca.pem
+      # Language-model detection (paid): https://nlp:8095 with --profile nlp.
+      RV_NLP_URL: ${RV_NLP_URL:-}
+
+  # Language models for detection (paid; --profile nlp): spaCy by default, or
+  # transformers or Stanza with RV_NLP_ENGINE at build time. Only the detection
+  # services reach it, over mutual TLS, and it has no outbound network.
+  nlp:
+    <<: *hardening
+    profiles: ["nlp"]
+    image: ${RV_REGISTRY:-rv}/nlp:${RV_VERSION:-dev}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/nlp.Dockerfile
+      args: { ENGINE: "${RV_NLP_ENGINE:-spacy}", MODEL: "${RV_NLP_MODEL:-}" }
+    networks: [app]
+    tmpfs: ["/tmp:size=512m"]
+    mem_limit: ${RV_NLP_MEMORY:-4g}
+    volumes: ["./internal-tls/nlp:/tls:ro"]
+    environment:
       RV_TLS_CERT: /tls/cert.pem
       RV_TLS_KEY: /tls/key.pem
       RV_TLS_CLIENT_CA: /tls/ca.pem

@@ -642,6 +642,43 @@ type RuleSet struct {
 	lists     map[[32]byte][]*compiled
 	maxWords  int
 	hasPaths  bool
+
+	// model is a language-model finder (spaCy, transformers or Stanza), used on top of
+	// the patterns for the modules in modelModules. Nil when not switched on.
+	model        ModelFinder
+	modelModules map[string]bool
+}
+
+// ModelFinder finds values with a language model. The finder is a paid feature in
+// ee/nlp; detection works without it.
+type ModelFinder interface {
+	// Find returns entities with byte offsets into text. An error means the model
+	// could not be asked, and the patterns' result stands on its own.
+	Find(text string) ([]Entity, error)
+}
+
+// WithModel adds a language-model finder for the given modules ("ai", "api", "logs",
+// "proxy").
+func (r *RuleSet) WithModel(f ModelFinder, modules []string) *RuleSet {
+	r.model = f
+	r.modelModules = map[string]bool{}
+	for _, m := range modules {
+		r.modelModules[m] = true
+	}
+	return r
+}
+
+// ModelModules lists the modules where the language model runs, for reporting.
+func (r *RuleSet) ModelModules() []string {
+	if r.model == nil {
+		return nil
+	}
+	out := make([]string, 0, len(r.modelModules))
+	for m := range r.modelModules {
+		out = append(out, m)
+	}
+	sort.Strings(out)
+	return out
 }
 
 type termRef struct {
@@ -790,6 +827,11 @@ func (r *RuleSet) ScanFor(module, path, text, hint string) []Entity {
 	}
 	if len(r.foreign) > 0 {
 		if extra := r.engine.ScanPacks(text, r.foreign); len(extra) > 0 {
+			base = mergeOverlaps(base, extra)
+		}
+	}
+	if r.model != nil && r.modelModules[module] && strings.TrimSpace(text) != "" {
+		if extra, err := r.model.Find(text); err == nil && len(extra) > 0 {
 			base = mergeOverlaps(base, extra)
 		}
 	}

@@ -5,10 +5,11 @@ Code in any directory named `ee` is under the [Onshore Commercial Licence](LICEN
 | Where | What | Edition |
 | --- | --- | --- |
 | `data-plane/ee/vaultapi` | Data subject request tools (find, show, export, restrict), flow checks, cloaking and digital twins, secure components, log and gateway internals, your own data types | Business |
-| `data-plane/ee/cloak`, `gateway`, `logproc`, `adapters`, `filered` | Cloaking, the AI gateway and HTTP proxy, log processing, ticket adapters, file redaction | Business |
+| `data-plane/ee/cloak`, `gateway`, `logproc`, `adapters`, `filered` | Cloaking, the AI gateway and HTTP proxy, log processing, ticket adapters, file redaction (including DICOM) | Business |
+| `data-plane/ee/nlp`, `ee/nlp` | Language-model detection with spaCy, transformers or Stanza: the client and the model service | Business |
 | `data-plane/ee/cmd/*` | The AI gateway, HTTP proxy, log processor, adapters and file redactor services | Business |
 | `data-plane/ee/hsm` | The PKCS#11 hardware security module key backend (`-tags hsm`) | Enterprise |
-| `control-api/src/ee/routes` | Log pipelines, AI gateway and proxy settings, ticket adapters, the residency map, evidence reports, webhooks, page protection, your own data types and country packs, single sign-on, SCIM | Business |
+| `control-api/src/ee/routes` | Log pipelines, AI gateway and proxy settings, ticket adapters, the residency map, evidence reports, webhooks, page protection, your own data types and country packs, single sign-on, SCIM, language-model detection settings | Business |
 | `control-api/src/ee/advanced-rules.ts` | Access rules with purposes, office hours, reveal limits, network or MFA conditions | Business |
 | `control-api/src/ee/ldap.ts`, `federation*.ts`, `member.ts`, `siem.ts` | LDAP, linked installs, audit streaming to a SIEM | Enterprise |
 

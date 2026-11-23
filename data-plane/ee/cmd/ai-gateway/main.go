@@ -14,6 +14,8 @@ import (
 	"onshore/data-plane/ee/gateway"
 	"onshore/data-plane/internal/detect"
 	"onshore/data-plane/internal/netguard"
+
+	_ "onshore/data-plane/ee/nlp" // paid: language-model detection, when RV_NLP_URL is set
 )
 
 func main() {

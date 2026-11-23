@@ -35,7 +35,7 @@ RUN git clone -q --depth 1 --branch v1.7.4 https://github.com/ggml-org/whisper.c
 RUN curl -sSfL -o /ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 
 FROM debian:bookworm-slim AS file-redactor
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends tesseract-ocr tesseract-ocr-eng poppler-utils ffmpeg ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends tesseract-ocr tesseract-ocr-eng poppler-utils ffmpeg dcmtk ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*
 COPY --from=whisper-build /w/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper-build /ggml-base.en.bin /models/ggml-base.en.bin
 COPY --from=build /out/file-redactor /file-redactor

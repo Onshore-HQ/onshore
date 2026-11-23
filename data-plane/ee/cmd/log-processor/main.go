@@ -18,6 +18,8 @@ import (
 	"onshore/data-plane/internal/store"
 	"onshore/data-plane/internal/tlsutil"
 	"onshore/data-plane/internal/vault"
+
+	_ "onshore/data-plane/ee/nlp" // paid: language-model detection, when RV_NLP_URL is set
 )
 
 func must(k string) string {

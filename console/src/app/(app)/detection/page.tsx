@@ -1,5 +1,6 @@
 "use client";
 import { CountryPacks } from "./packs";
+import { LanguageModels } from "./models";
 import { tr } from "@/lib/i18n";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -194,7 +195,7 @@ export default function Detection() {
   const vaults = useLoad<{ vaults: { id: string; name: string; environment: string }[] }>(() => control("/v1/vaults"));
   const [picked, setPicked] = useState("");
   const [tab, setTab] = useState("built-in");
-  useEffect(() => { const t = new URLSearchParams(window.location.search).get("tab"); if (t === "packs" || t === "custom" || t === "templates") setTab(t); }, []);
+  useEffect(() => { const t = new URLSearchParams(window.location.search).get("tab"); if (t === "packs" || t === "custom" || t === "templates" || t === "models") setTab(t); }, []);
   const vault = picked || vaults.value?.vaults[0]?.id || "";
   const det = useLoad<{ enabled: boolean; thresholds: Record<string, number>; built_in: { slug: string; name: string }[]; ruleset_version: number }>(() => (vault ? control(`/v1/vaults/${vault}/detection`) : Promise.resolve(null as never)), [vault]);
   const [error, setError] = useState<string | null>(null);
@@ -217,10 +218,10 @@ export default function Detection() {
       {det.value && (
         <>
           <div className="tabs" role="tablist">
-            {[["built-in", tr("Built-in")], ["custom", tr("Your own")], ["packs", tr("Country packs")], ["templates", tr("Templates")]].map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k!)}>{l}</button>)}
+            {[["built-in", tr("Built-in")], ["custom", tr("Your own")], ["packs", tr("Country packs")], ["models", tr("Language models")], ["templates", tr("Templates")]].map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k!)}>{l}</button>)}
           </div>
           {tab === "built-in" && <BuiltIn vault={vault} builtIn={det.value.built_in} thresholds={det.value.thresholds} canTune={isAdmin} onChange={det.reload} />}
-          {tab !== "built-in" && tab !== "packs" && !det.value.enabled && (
+          {tab !== "built-in" && tab !== "packs" && tab !== "models" && !det.value.enabled && (
             <Empty title={tr("Custom entities are off for this vault")}>
               <p>{tr("Turn them on to define your own sensitive data types. Nothing changes in traffic until a data type has been tested, approved by a second person and published.")}</p>
               {isAdmin && <button className="primary" style={{ marginTop: 10 }} onClick={async () => { try { await control(`/v1/vaults/${vault}/detection`, { method: "PATCH", body: { enabled: true } }); det.reload(); } catch (e) { setError(e instanceof Error ? e.message : "failed"); } }}>{tr("Turn on for this vault")}</button>}
@@ -231,6 +232,7 @@ export default function Detection() {
           {tab === "custom" && det.value.enabled && <Custom vault={vault} canManage={canManage} canApprove={canApprove} meId={me?.id} />}
           {tab === "templates" && det.value.enabled && <Templates vault={vault} canManage={canManage} />}
           {tab === "packs" && <CountryPacks canManage={canManage} />}
+          {tab === "models" && <LanguageModels vault={vault} canManage={isAdmin} />}
         </>
       )}
     </Page>

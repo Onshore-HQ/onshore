@@ -64,7 +64,7 @@ func (d *DBSource) Snapshot(ctx context.Context, vault string) (*rules.Snapshot,
 	out := &rules.Snapshot{Values: map[string][]byte{}}
 	var thresholds []byte
 	var enabled bool
-	err := s.Pool.QueryRow(ctx, `SELECT coalesce(r.version,0),v.detection_thresholds,v.custom_entities_enabled,v.country,v.packs FROM control.vaults v LEFT JOIN control.ruleset_versions r ON r.vault_id=v.id WHERE v.id=$1`, vault).Scan(&out.Version, &thresholds, &enabled, &out.Country, &out.Packs)
+	err := s.Pool.QueryRow(ctx, `SELECT coalesce(r.version,0),v.detection_thresholds,v.custom_entities_enabled,v.country,v.packs,v.model_modules,v.environment='sandbox' FROM control.vaults v LEFT JOIN control.ruleset_versions r ON r.vault_id=v.id WHERE v.id=$1`, vault).Scan(&out.Version, &thresholds, &enabled, &out.Country, &out.Packs, &out.Models, &out.Sandbox)
 	if err != nil {
 		return nil, err
 	}

@@ -24,7 +24,8 @@ This page says plainly what has and hasn't been tested, so you can decide what m
 | SCIM | 29 checks with Entra- and Okta-shaped requests | A live Entra or Okta tenant |
 | LDAP | OpenLDAP over LDAPS and StartTLS | Active Directory |
 | Passkeys | Chromium with a virtual authenticator | Real phones and keys, Safari, Firefox |
-| File redaction | One generated PDF, image and recording | Faces, signatures, stamps; non-English speech |
+| File redaction | One generated PDF, image and recording. DICOM: generated files, and a JPEG-compressed colour scan decompressed with DCMTK, read with OCR and de-identified inside the container | Faces, signatures, stamps; non-English speech; DICOM from real scanners, multi-frame cine loops, JPEG 2000 |
+| Language-model detection | spaCy (`en_core_web_sm`) end to end over mutual TLS: names and places found that patterns missed, fallback when the service is down, about 20 ms added per short request on a laptop | The transformers and Stanza images; the large spaCy model; accuracy measured on a labelled data set |
 | Secure components | Chromium, hostile host page, replay, racing | Safari, Firefox, mobile browsers |
 | HSM | SoftHSM | A hardware HSM |
 | Helm chart | Lint and schema validation | Installing on a cluster |

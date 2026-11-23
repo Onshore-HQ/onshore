@@ -17,6 +17,7 @@ __pycache__/
 deploy/compose/certs/*
 !deploy/compose/certs/.gitkeep
 deploy/compose/internal-tls/
+deploy/compose/internal-tls.*/
 deploy/compose/bundle/
 *.pem
 *.key

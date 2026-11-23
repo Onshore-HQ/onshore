@@ -55,6 +55,18 @@ type Redactor struct {
 	TmpDir       string
 	WhisperModel string
 	Timeout      time.Duration
+	// UIDKey derives replacement DICOM UIDs, so one study keeps one UID across files.
+	UIDKey []byte
+	// ocrFn replaces tesseract in tests.
+	ocrFn func(ctx context.Context, path string) ([]word, error)
+}
+
+// readWords runs OCR on one image.
+func (r *Redactor) readWords(ctx context.Context, path string) ([]word, error) {
+	if r.ocrFn != nil {
+		return r.ocrFn(ctx, path)
+	}
+	return r.ocr(ctx, path)
 }
 
 // forVault returns a copy bound to a vault's rule set, or an error before rules load.
@@ -96,7 +108,7 @@ func (r *Redactor) run(ctx context.Context, name string, args ...string) ([]byte
 // Redact dispatches on the detected type, not on what the caller claims.
 func (r *Redactor) Redact(ctx context.Context, body []byte) (*Result, error) {
 	if r.set == nil {
-		r = &Redactor{Engine: r.Engine, Rules: nil, TmpDir: r.TmpDir, WhisperModel: r.WhisperModel, set: detect.BaseRuleSet(r.Engine)}
+		r = &Redactor{Engine: r.Engine, Rules: nil, TmpDir: r.TmpDir, WhisperModel: r.WhisperModel, UIDKey: r.UIDKey, ocrFn: r.ocrFn, set: detect.BaseRuleSet(r.Engine)}
 	}
 	timeout := r.Timeout
 	if timeout == 0 {
@@ -110,6 +122,8 @@ func (r *Redactor) Redact(ctx context.Context, body []byte) (*Result, error) {
 	}
 	defer os.RemoveAll(dir) // the upload and all derived files go with the request
 	switch sniff(body) {
+	case "dicom":
+		return r.dicom(ctx, dir, body)
 	case "pdf":
 		return r.pdf(ctx, dir, body)
 	case "image":
@@ -127,6 +141,8 @@ var ErrUnsupported = errors.New("unsupported file type")
 
 func sniff(b []byte) string {
 	switch {
+	case isDICOM(b):
+		return "dicom"
 	case bytes.HasPrefix(b, []byte("%PDF-")):
 		return "pdf"
 	case bytes.HasPrefix(b, []byte{0x89, 'P', 'N', 'G'}), bytes.HasPrefix(b, []byte{0xFF, 0xD8, 0xFF}), bytes.HasPrefix(b, []byte("II*\x00")), bytes.HasPrefix(b, []byte("MM\x00*")):

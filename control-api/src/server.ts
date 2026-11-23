@@ -19,6 +19,7 @@ import { scimRoutes } from "./ee/routes/scim.js";
 import { packRoutes } from "./ee/routes/packs.js";
 import { evidenceRoutes } from "./routes/evidence.js";
 import { customEntityRoutes } from "./ee/routes/custom-entities.js";
+import { detectionModelRoutes } from "./ee/routes/detection-models.js";
 import { gatewayRoutes } from "./ee/routes/gateways.js";
 import { peopleRoutes } from "./routes/people.js";
 import { pipelineRoutes } from "./ee/routes/pipelines.js";
@@ -91,6 +92,8 @@ await app.register(evidenceRoutes);
 await app.register(gated("business", "evidence reports", reportRoutes, { all: true }));
 await app.register(usageRoutes);
 await app.register(gated("business", "your own data types", customEntityRoutes));
+// Language-model detection checks its edition itself, so sandbox vaults can try it.
+await app.register(detectionModelRoutes);
 await app.register(gated("business", "webhooks", webhookRoutes));
 await app.register(gated("business", "page protection", pageProtectionRoutes));
 await app.register(gated("business", "page protection", pageReportRoute));

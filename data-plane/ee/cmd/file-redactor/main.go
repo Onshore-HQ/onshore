@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"log"
 	"net/http"
 	"onshore/data-plane/internal/license"
@@ -17,6 +19,8 @@ import (
 	"onshore/data-plane/ee/gateway"
 	"onshore/data-plane/internal/detect"
 	"onshore/data-plane/internal/tlsutil"
+
+	_ "onshore/data-plane/ee/nlp" // paid: language-model detection, when RV_NLP_URL is set
 )
 
 func must(k string) string {
@@ -46,7 +50,7 @@ func main() {
 	}
 	go st.Run(ctx, nil)
 	s := &filered.Server{
-		R:     &filered.Redactor{Engine: detect.New(detect.Config{}), Rules: st, TmpDir: os.TempDir(), WhisperModel: os.Getenv("RV_WHISPER_MODEL")},
+		R:     &filered.Redactor{Engine: detect.New(detect.Config{}), Rules: st, TmpDir: os.TempDir(), WhisperModel: os.Getenv("RV_WHISPER_MODEL"), UIDKey: uidKey(must("RV_INTERNAL_TOKEN"))},
 		Vault: &gateway.VaultClient{BaseURL: must("VAULT_INTERNAL_URL"), Token: must("RV_INTERNAL_TOKEN"), HTTP: client},
 		Slots: make(chan struct{}, slots),
 	}
@@ -73,4 +77,12 @@ func main() {
 	if err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// uidKey derives the DICOM UID key from the install's internal secret, so replacement
+// UIDs are stable for the install without another secret to manage.
+func uidKey(secret string) []byte {
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write([]byte("onshore dicom uid v1"))
+	return m.Sum(nil)
 }

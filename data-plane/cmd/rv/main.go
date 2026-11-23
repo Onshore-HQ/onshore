@@ -46,6 +46,7 @@ const usage = `rv: Onshore operator tool
   rv keys init                       initialise OpenBao: 5 shares, threshold 3
   rv keys unseal                     enter unseal shares (needs any 3)
   rv keys status                     show seal state
+  rv tls renew [-dir .]              new internal CA and certificates for every service
   rv doctor [-env .env]              pass/fail report for your change ticket
   rv scan <file|->                   shadow-mode leak report, changes nothing
   rv sa-keygen                       make a service-account key pair
@@ -89,6 +90,8 @@ func main() {
 		err = cmdImport(args)
 	case "token":
 		err = cmdToken(args)
+	case "tls":
+		err = cmdTLS(args)
 	default:
 		fmt.Print(usage)
 		os.Exit(2)
@@ -899,4 +902,34 @@ func uuid4() string {
 	b[8] = b[8]&0x3f | 0x80
 	h := hex.EncodeToString(b)
 	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
+// cmdTLS renews the internal CA and every service's certificate, for example to add
+// a service that came later (such as the language-model service) or before the CA
+// expires. The old set is kept beside the new one until the operator removes it.
+func cmdTLS(args []string) error {
+	if len(args) == 0 || args[0] != "renew" {
+		return errors.New("usage: rv tls renew [-dir .]")
+	}
+	fs := flag.NewFlagSet("tls renew", flag.ExitOnError)
+	dir := fs.String("dir", ".", "the directory holding internal-tls")
+	fs.Parse(args[1:])
+	cur := filepath.Join(*dir, "internal-tls")
+	next := cur + ".new"
+	os.RemoveAll(next)
+	if err := tlsutil.IssueAll(next, 10*365*24*time.Hour); err != nil {
+		return err
+	}
+	old := fmt.Sprintf("%s.old-%s", cur, time.Now().UTC().Format("20060102-150405"))
+	if _, err := os.Stat(cur); err == nil {
+		if err := os.Rename(cur, old); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(next, cur); err != nil {
+		return err
+	}
+	// Named relative to the install directory: inside the tools container it's /work.
+	fmt.Printf("New internal certificates are in internal-tls; the old set is in %s.\nRestart every service so they pick them up:\n  docker compose up -d --force-recreate\nthen unseal the key service (./rv keys unseal) and delete %s.\n", filepath.Base(old), filepath.Base(old))
+	return nil
 }

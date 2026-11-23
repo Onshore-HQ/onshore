@@ -1,13 +1,13 @@
 ---
 title: Redact a file
-description: Remove identifiers from a PDF, scanned image or call recording, and download a clean copy.
+description: Remove identifiers from a PDF, scanned image, call recording or DICOM medical image, and download a clean copy.
 ---
 
 import { Callout, Steps } from "nextra/components";
 
 # Redact a file
 
-Sensitive data doesn't only live in text. **Redact a file** finds identifiers in a PDF, an image or an audio recording and gives you a copy with them removed.
+Sensitive data doesn't only live in text. **Redact a file** finds identifiers in a PDF, an image, an audio recording or a DICOM medical image and gives you a copy with them removed.
 
 <Shot src="/screenshots/files.png" alt="Redact a file: vault, purpose or ticket ID, and file, with Redact and download" />
 
@@ -32,11 +32,27 @@ Up to 64 MB. Select **Redact and download**.
 | **PDF** | Pages are read, painted over and rebuilt, so covered text can't be copied back out |
 | **Image** | Text is read from the scan or photo, and matches are painted over |
 | **Audio** | The recording is transcribed, and segments holding identifiers are silenced |
+| **DICOM** | The header is de-identified and text burned into the image is painted over (see below) |
 
 Speech and image processing run inside your install: files aren't sent to an outside service. Your own data types apply too. Every redaction is in the audit log.
 
 <Callout type="warning">
 Text and speech are redacted, but **not faces, signatures or stamps**. Poor scans are flagged as low confidence. Speech uses an English model and hasn't been tested on other languages or accents. Review results before relying on them.
+</Callout>
+
+## DICOM medical images
+
+Scans from X-ray, CT, MRI and ultrasound carry identifiers in two places, and both are cleaned:
+
+- **The header.** Following the DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E), the patient's name, ID, birth date, sex and accession number are emptied. Other identifying attributes are removed, including addresses, phone numbers, other IDs, the institution, the people involved, device serial numbers, and dates and times. Private tags are removed. Every other text attribute goes through detection, including your own data types. `PatientIdentityRemoved` is set to `YES`.
+- **The pixels.** Each frame is read with OCR, and text is painted over where it holds an identifier, or any word of the patient's own header values. This catches a name burned into the corner of an ultrasound in whatever format the machine printed it.
+
+Study, series and instance UIDs are replaced with new ones derived under your install's key, so files from one study still belong together after redaction, and the original UIDs can't be worked out.
+
+Compressed scans (JPEG, JPEG-LS, RLE) are decompressed first, and the clean copy is uncompressed. A scan compressed with JPEG 2000 is refused, rather than returned unchecked. Files with more than 500 frames are refused too.
+
+<Callout type="warning">
+Only text is removed from the pixels, **not faces**: a 3D head scan can still be rendered into a recognisable face. Image text is read in English. Check the clean copy before sharing it outside your organisation.
 </Callout>
 
 Developers can redact files through the API or the [HTTP proxy](/guides/connections/http-proxy/). Only roles an access rule allows (`file_redact`) can use this page; by default the DPO and compliance roles.

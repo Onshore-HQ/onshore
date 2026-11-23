@@ -1,0 +1,95 @@
+---
+title: Language models
+description: Add spaCy, Hugging Face transformers or Stanza to Onshore's detection, to find names and places that patterns, checksums and name lists miss.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Language models
+
+Onshore finds identifiers with patterns, checksums and name lists. That's fast and precise for structured values like ID numbers, cards, phone numbers and emails. But a name or a place in free text has no fixed shape: "my landlord, Mr Okonkwo-Ibe, at the flat on Admiralty Way".
+
+**Language models** read the whole sentence and find names and places from context. Onshore can ask one as well as its patterns. What both find is protected the same way: tokenized, masked, cloaked or painted over, under the same rules.
+
+<Callout type="info">
+Language models are part of **Onshore Business**. They're free on sandbox vaults, to try them.
+</Callout>
+
+## Choose an engine
+
+| Engine | Default model | Good for |
+| --- | --- | --- |
+| [spaCy](https://spacy.io) (default) | `en_core_web_lg` | A good balance of speed and accuracy, on CPU |
+| [Hugging Face transformers](https://huggingface.co/docs/transformers) | `dslim/bert-base-NER` | Higher accuracy on messy text, or a model trained for your language; slower |
+| [Stanza](https://stanfordnlp.github.io/stanza/) | `en` | Many languages with one consistent pipeline |
+
+Any model can be used: a spaCy pipeline package, a Hugging Face token-classification model, or a Stanza language code. The model is built into the image, because the service has no outbound network.
+
+Models find **people** and **places**. Organisations aren't personal data, so they're ignored. Numbers, IDs and dates stay the patterns' job.
+
+## Turn it on
+
+<Steps>
+
+### Add a certificate for the model service
+
+Installs set up with `rv init` from this release on already have one. On an older install, renew the internal certificates. This restarts every service, and the key service then needs unsealing:
+
+```sh
+./rv tls renew
+docker compose up -d --force-recreate
+./rv keys unseal
+```
+
+### Build and start the service
+
+In `.env`, choose the engine and model, and point the detection services at the service:
+
+```sh filename=".env"
+RV_NLP_ENGINE=spacy            # or transformers, or stanza
+RV_NLP_MODEL=en_core_web_lg    # optional; each engine has a default
+RV_NLP_URL=https://nlp:8095
+```
+
+```sh
+docker compose --profile nlp build nlp
+docker compose --profile nlp up -d
+docker compose up -d vault-api   # and the other services you run, so they see RV_NLP_URL
+```
+
+### Choose where it runs
+
+In the console, open **Data types → Language models**, choose the vault, tick where to use it and **Save**. Services pick up the change within seconds.
+
+</Steps>
+
+## Where to use it
+
+| Where | Advice |
+| --- | --- |
+| **AI gateway** | Usually worth it. Prompts are free text, and the model's time is small next to the AI's |
+| **Files, support tickets and the detect API** | Worth it for documents and tickets, where names sit in prose |
+| **HTTP proxy** | Adds time to every call to a vendor |
+| **Log pipelines** | Only for low volumes. A model reads hundreds of lines a second on a CPU core; the patterns read thousands |
+
+## How it behaves
+
+- **Patterns still run.** The model adds to what the patterns find and never replaces them. Where both find overlapping text, the longer match wins.
+- **If the service is down, detection carries on with the patterns alone.** A warning is logged at most once a minute.
+- **Text stays inside the install.** Services reach the model over mutual TLS, it has no outbound network, and it never writes text to disk or to its log.
+- **Scores.** transformers models give each finding a score; spaCy and Stanza don't, so their findings score 0.85. Findings below `RV_NLP_MIN_SCORE` (default 0.6) are ignored.
+
+## Settings
+
+| Variable | Where | Default | What it does |
+| --- | --- | --- | --- |
+| `RV_NLP_ENGINE` | build | `spacy` | `spacy`, `transformers` or `stanza` |
+| `RV_NLP_MODEL` | build | per engine | The model built into the image |
+| `RV_NLP_URL` | detection services | empty (off) | `https://nlp:8095` |
+| `RV_NLP_TIMEOUT` | detection services | `3s` | How long to wait for the model before using the patterns alone |
+| `RV_NLP_MIN_SCORE` | detection services | `0.6` | Ignore findings scored below this |
+| `RV_NLP_MEMORY` | `nlp` service | `4g` | Memory limit; transformers models need more |
+
+<Callout type="warning">
+A model can miss a name, or mark a word that isn't one. Check its results on your own data in a sandbox vault before turning it on in production.
+</Callout>

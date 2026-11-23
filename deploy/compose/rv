@@ -8,6 +8,11 @@ case "${1:-}" in
     shift
     exec docker run --rm -v "$PWD:/work" "${RV_REGISTRY:-rv}/tools:${RV_VERSION:-dev}" init -dir /work "$@"
     ;;
+  tls)
+    # Writes internal-tls here, like init.
+    shift
+    exec docker run --rm -v "$PWD:/work" "${RV_REGISTRY:-rv}/tools:${RV_VERSION:-dev}" tls "$@" -dir /work
+    ;;
   verify)
     # Check a release before loading it: signature against the key in this tool.
     shift
