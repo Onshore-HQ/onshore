@@ -247,6 +247,95 @@ services:
       OPENBAO_CACERT: /work/internal-tls/tools/ca.pem
     volumes: [".:/work"]
 
+  # ---- Observability (optional): docker compose --profile observability up -d ----
+  # Loki keeps every service's logs, Alloy collects them, Prometheus keeps Onshore's
+  # metrics, and Grafana shows both at https://<host>/grafana/. Everything stays on
+  # this host. Logs never hold a stored value: services log what happened, not data.
+  docker-socket-proxy:
+    profiles: ["observability"]
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      # Read-only: list containers and networks and read logs. Everything else is refused.
+      CONTAINERS: 1
+      NETWORKS: 1
+      POST: 0
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    networks: [obs]
+
+  loki:
+    profiles: ["observability"]
+    image: grafana/loki:3.4.2
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    command: ["-config.file=/etc/loki/loki.yaml", "-config.expand-env=true"]
+    environment:
+      RV_LOG_RETENTION: ${RV_LOG_RETENTION:-720h}
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - lokidata:/loki
+    networks: [obs]
+
+  alloy:
+    profiles: ["observability"]
+    image: grafana/alloy:v1.7.5
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "--disable-reporting", "/etc/alloy/config.alloy"]
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-onshore}
+      RV_HOST: ${RV_HOST:-localhost}
+    volumes:
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      - alloydata:/var/lib/alloy/data
+    networks: [obs]
+    depends_on: [loki, docker-socket-proxy]
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v3.2.1
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/bin/sh", "/etc/prometheus/start.sh"]
+    environment:
+      RV_HOST: ${RV_HOST:-localhost}
+      RV_METRICS_KEY: ${RV_METRICS_KEY:-}
+      RV_METRICS_RETENTION: ${RV_METRICS_RETENTION:-30d}
+    volumes:
+      - ./observability/prometheus-start.sh:/etc/prometheus/start.sh:ro
+      - promdata:/prometheus
+    # app: Onshore's metrics through the edge's internal listener. obs: Loki, Alloy, Grafana.
+    networks: [app, obs]
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.5.2
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    # Refuses to start without an admin password: Grafana's default is "admin".
+    entrypoint: ["/bin/sh", "-c", "[ -n \"$$GF_SECURITY_ADMIN_PASSWORD\" ] || { echo 'Set RV_GRAFANA_ADMIN_PASSWORD in .env'; exit 1; }; exec /run.sh"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${RV_GRAFANA_ADMIN_PASSWORD:-}
+      GF_SERVER_ROOT_URL: https://${RV_HOST:-localhost}${RV_PUBLIC_PORT:+:${RV_PUBLIC_PORT}}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/onshore.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    networks: [app, obs]
+    depends_on: [loki, prometheus]
+
 networks:
   app:
     internal: true
@@ -258,8 +347,14 @@ networks:
     internal: true
   public: {}
   egress: {}   # log destinations abroad; nothing else joins this network
+  obs:
+    internal: true   # observability: Loki, Alloy, Prometheus, Grafana
 
 volumes:
   pgdata: {}
   keydata: {}
   caddydata: {}
+  lokidata: {}
+  alloydata: {}
+  promdata: {}
+  grafanadata: {}

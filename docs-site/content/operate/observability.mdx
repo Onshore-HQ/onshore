@@ -1,0 +1,129 @@
+---
+title: Logs and monitoring
+description: Keep, search and graph every Onshore service's logs and metrics with Grafana Loki, Grafana Alloy, Prometheus and Grafana, all on your own servers.
+---
+
+import { Callout, Steps } from "nextra/components";
+
+# Logs and monitoring
+
+Onshore ships an optional **observability** profile built on open source tools:
+
+| Tool | What it does |
+| --- | --- |
+| [Grafana Loki](https://grafana.com/oss/loki/) | Stores every service's logs, for as long as you choose |
+| [Grafana Alloy](https://grafana.com/oss/alloy-opentelemetry-collector/) | Collects the output of every Onshore container and sends it to Loki |
+| [Prometheus](https://prometheus.io/) | Keeps Onshore's metrics: service health, vault response time, audited operations, alerts |
+| [Grafana](https://grafana.com/oss/grafana/) | Shows logs and metrics together, at `https://<your host>/grafana/` |
+
+Everything runs on the same host as Onshore and keeps its data there, so logs never leave the install's country.
+
+<Shot src="/screenshots/observability-grafana.png" alt="The Onshore dashboard in Grafana: log lines and errors in the last hour, errors and log lines by service, vault response time, audited operations, slow requests and a log search" />
+
+<Callout type="info">
+Logs never hold a stored value. Onshore's services record what happened, who did it and how long it took, never the data. That's what makes it safe to keep them in an ordinary log tool.
+</Callout>
+
+## Turn it on
+
+<Steps>
+
+### Check `.env`
+
+Installs set up with `rv init` already have these lines. On an older install, add them:
+
+```sh filename=".env"
+RV_GRAFANA_ADMIN_PASSWORD=<a long random password>
+RV_LOG_RETENTION=720h        # how long Loki keeps logs (720h = 30 days)
+RV_METRICS_RETENTION=30d     # how long Prometheus keeps metrics
+RV_METRICS_KEY=              # filled in below
+```
+
+Grafana refuses to start without `RV_GRAFANA_ADMIN_PASSWORD`, so it never runs with its default password.
+
+### Start it
+
+```sh
+docker compose --profile observability up -d
+docker compose restart edge      # once, so the edge picks up the /grafana route
+```
+
+Add `--profile observability` next to the other profiles you use, such as `logs` or `ai`.
+
+### Sign in
+
+Open `https://<your host>/grafana/` and sign in as `admin` with the password from `.env`. The **Onshore: logs and health** dashboard opens first.
+
+### Add a metrics key
+
+In the console, open **Health & alerts**, and under **Metrics** select **Create key**. Put the key in `.env` as `RV_METRICS_KEY`, then:
+
+```sh
+docker compose --profile observability up -d prometheus
+```
+
+The health, alerts, response-time and audited-operations panels fill in within a minute. The key can read these numbers and nothing else.
+
+</Steps>
+
+## The dashboard
+
+| Panel | Shows |
+| --- | --- |
+| Log lines, errors (last hour) | Volume and errors across every service |
+| Errors by service, log lines by service | Which service is noisy or failing, over time |
+| Services up, open alerts | From Onshore's own health checks |
+| Vault response time | Median and 95th percentile for storing and revealing values |
+| Audited operations | Reveals, stores, refusals and more, by action |
+| Slow control API requests | Requests that took over a second; empty is good |
+| Logs | Every line, filtered by service, level and text |
+
+**Find a request.** When an error in the console or an API response shows a request ID (`req_…`), paste it into **Search** at the top of the dashboard to see every log line for that request, across services.
+
+For anything else, use **Explore** in Grafana with LogQL, for example:
+
+```
+{service="vault-api", level="error"}
+{service="control-api"} | json | status >= 500
+{service=~".+"} |= "req_eccfb8b1b272524657e79e0e"
+```
+
+Each line carries the labels `service`, `container`, `stream`, `install` and `level`. The level comes from the line itself: `error`, `warn` or `info`.
+
+## How it's secured
+
+- **Grafana needs a sign-in.** Anonymous access and sign-up are off, and the cookie is sent only over HTTPS through the edge.
+- **Nothing is reachable from outside except Grafana.** Loki, Alloy and Prometheus sit on their own internal Docker network.
+- **Docker is reached through a read-only proxy.** Alloy can list containers and networks and read logs through [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy), and nothing else. It never gets the Docker socket, which would amount to control of the host.
+- **Metrics go through an internal-only listener on the edge**, on port 9180, which isn't published. It serves only the metrics path, forwards to the control API over mutual TLS, and still needs the metrics key.
+- **No phoning home.** Grafana's update checks, usage reporting, news feed and plugin downloads are off, and so is Loki's usage reporting.
+
+Put Grafana under your single sign-on if you prefer: see [Grafana's authentication docs](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/).
+
+## Use a log system you already run
+
+The profile is optional. If your company already runs a log platform, send Onshore's logs there instead:
+
+- **Your own Loki:** point Alloy at it by changing the `loki.write` URL in `deploy/compose/observability/alloy.alloy`, and run only `docker-socket-proxy` and `alloy`.
+- **Elasticsearch, OpenSearch, Splunk or Datadog:** set Docker's logging driver for the Onshore services, or run that vendor's own agent; Alloy can also forward to most of them.
+- **Metrics only:** point your Prometheus, Grafana Agent or Datadog at the metrics endpoint as described in [Health and alerts](/guides/health-and-alerts/).
+
+The **audit log** is separate: it lives in the vault and can stream to your SIEM from **Settings → Audit**. See [Audit log](/guides/audit-log/).
+
+## Storage and retention
+
+| Data | Volume | Kept for |
+| --- | --- | --- |
+| Logs | `lokidata` | `RV_LOG_RETENTION`, default 30 days |
+| Metrics | `promdata` | `RV_METRICS_RETENTION`, default 30 days |
+| Grafana settings and users | `grafanadata` | Until removed |
+
+Size the disk for your retention and traffic. On first start, Alloy reads each container's existing output, and lines more than a week old are skipped.
+
+## Turn it off
+
+```sh
+docker compose --profile observability stop docker-socket-proxy loki alloy prometheus grafana
+```
+
+To delete what they stored, remove the containers and then the volumes: `docker volume rm onshore_lokidata onshore_alloydata onshore_promdata onshore_grafanadata`.

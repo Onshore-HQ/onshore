@@ -185,6 +185,13 @@ func cmdInit(args []string) error {
 		"RV_LICENCE=" + licence,
 		"# Written by `rv keys init`:",
 		"OPENBAO_TOKEN=",
+		"# Observability (optional, --profile observability): Grafana at https://<host>/grafana/.",
+		"RV_GRAFANA_ADMIN_PASSWORD=" + secret(18),
+		"# How long Loki keeps logs and Prometheus keeps metrics.",
+		"RV_LOG_RETENTION=720h",
+		"RV_METRICS_RETENTION=30d",
+		"# A metrics key from the console (Health & alerts, Metrics, Create key), for Prometheus.",
+		"RV_METRICS_KEY=",
 	}
 	if err := tlsutil.IssueAll(*dir+"/internal-tls", 10*365*24*time.Hour); err != nil {
 		return err
@@ -192,7 +199,7 @@ func cmdInit(args []string) error {
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("Wrote %s (mode 600).\nBootstrap token for the first admin: %s\n", path, bootstrap)
+	fmt.Printf("Wrote %s (mode 600).\nBootstrap token for the first admin: %s\nGrafana (optional observability profile): user admin, password in .env as RV_GRAFANA_ADMIN_PASSWORD.\n", path, bootstrap)
 	return nil
 }
 

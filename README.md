@@ -76,6 +76,8 @@ docker compose --profile logs --profile ai --profile proxy up -d
 
 Open `https://<host>/`, run first-time setup with the bootstrap token, and follow the [setup guide](https://docs.onshorevault.com/get-started/).
 
+**Logs and monitoring** (optional): `docker compose --profile observability up -d` adds Grafana Loki, Grafana Alloy, Prometheus and Grafana, with a ready-made dashboard at `https://<host>/grafana/`. See [Logs and monitoring](https://docs.onshorevault.com/operate/observability/).
+
 <details>
 <summary>More install options: your own certificate, linked installs, Onshore Cloud</summary>
 

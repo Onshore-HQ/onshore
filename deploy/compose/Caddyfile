@@ -94,9 +94,26 @@
 			import internal_tls
 		}
 	}
+	# Grafana, when the observability profile runs. It has its own sign-in.
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
 	handle {
 		reverse_proxy https://console:3000 {
 			import internal_tls
 		}
+	}
+}
+
+# Internal only (port 9180 is not published): Onshore's metrics for Prometheus in the
+# observability profile. Only the metrics path is served, and it still needs a metrics key.
+http://:9180 {
+	handle /v1/monitoring/metrics {
+		reverse_proxy https://control-api:8081 {
+			import internal_tls
+		}
+	}
+	handle {
+		respond "not found" 404
 	}
 }

@@ -7,6 +7,7 @@ export default {
   "tls-and-domains": "TLS and domains",
   "rv-cli": "The rv tool",
   "upgrades-and-backups": "Upgrades and backups",
+  observability: "Logs and monitoring",
   kubernetes: "Kubernetes",
   "known-limits": "Known limits",
   troubleshooting: "Troubleshooting",
