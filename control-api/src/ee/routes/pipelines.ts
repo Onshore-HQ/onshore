@@ -5,11 +5,12 @@ import { DEFAULT_ENTITY_TYPES, ENTITY_TYPES } from "../../catalog.js";
 import { audit, checkUpstreamUrl, db, newId, notFound, READ_CONFIG, requireRole, vault, WRITE } from "../../lib.js";
 import { ownedVault } from "../../routes/vaults.js";
 import { mapChanged } from "../map/run.js";
+import { TRANSFER_BASIS } from "../../routes/ai-routes.js";
+export { TRANSFER_BASIS };
 
 const ENTITIES = ENTITY_TYPES as [string, ...string[]];
 // payment_ref is opt-in: whether references are "payment transaction data" is undecided.
 const DEFAULT_ENTITIES = DEFAULT_ENTITY_TYPES;
-export const TRANSFER_BASIS = z.enum(["not_assessed", "adequacy", "approved_instrument", "section_43", "tokens_only"]);
 const ACTION = z.enum(["tokenize", "mask", "drop", "pass"]);
 
 const sensitive = z.array(z.string().regex(/^\$\.[\w.]+:[a-z_0-9]+$/, "use $.path.to.value:entity_type")).default([]);

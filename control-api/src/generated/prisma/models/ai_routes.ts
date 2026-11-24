@@ -82,6 +82,7 @@ export type Ai_routesCountAggregateOutputType = {
   created_at: number
   cloak_profile_id: number
   twin_days: number
+  cloak_options: number
   _all: number
 }
 
@@ -142,6 +143,7 @@ export type Ai_routesCountAggregateInputType = {
   created_at?: true
   cloak_profile_id?: true
   twin_days?: true
+  cloak_options?: true
   _all?: true
 }
 
@@ -247,6 +249,7 @@ export type Ai_routesGroupByOutputType = {
   created_at: Date
   cloak_profile_id: string | null
   twin_days: number
+  cloak_options: runtime.JsonValue
   _count: Ai_routesCountAggregateOutputType | null
   _avg: Ai_routesAvgAggregateOutputType | null
   _sum: Ai_routesSumAggregateOutputType | null
@@ -288,6 +291,7 @@ export type ai_routesWhereInput = {
   created_at?: Prisma.DateTimeFilter<"ai_routes"> | Date | string
   cloak_profile_id?: Prisma.StringNullableFilter<"ai_routes"> | string | null
   twin_days?: Prisma.IntFilter<"ai_routes"> | number
+  cloak_options?: Prisma.JsonFilter<"ai_routes">
   vaults?: Prisma.XOR<Prisma.VaultsScalarRelationFilter, Prisma.vaultsWhereInput>
   cloak_profiles?: Prisma.XOR<Prisma.Cloak_profilesNullableScalarRelationFilter, Prisma.cloak_profilesWhereInput> | null
 }
@@ -308,6 +312,7 @@ export type ai_routesOrderByWithRelationInput = {
   created_at?: Prisma.SortOrder
   cloak_profile_id?: Prisma.SortOrderInput | Prisma.SortOrder
   twin_days?: Prisma.SortOrder
+  cloak_options?: Prisma.SortOrder
   vaults?: Prisma.vaultsOrderByWithRelationInput
   cloak_profiles?: Prisma.cloak_profilesOrderByWithRelationInput
 }
@@ -332,6 +337,7 @@ export type ai_routesWhereUniqueInput = Prisma.AtLeast<{
   created_at?: Prisma.DateTimeFilter<"ai_routes"> | Date | string
   cloak_profile_id?: Prisma.StringNullableFilter<"ai_routes"> | string | null
   twin_days?: Prisma.IntFilter<"ai_routes"> | number
+  cloak_options?: Prisma.JsonFilter<"ai_routes">
   vaults?: Prisma.XOR<Prisma.VaultsScalarRelationFilter, Prisma.vaultsWhereInput>
   cloak_profiles?: Prisma.XOR<Prisma.Cloak_profilesNullableScalarRelationFilter, Prisma.cloak_profilesWhereInput> | null
 }, "id" | "vault_id_name">
@@ -352,6 +358,7 @@ export type ai_routesOrderByWithAggregationInput = {
   created_at?: Prisma.SortOrder
   cloak_profile_id?: Prisma.SortOrderInput | Prisma.SortOrder
   twin_days?: Prisma.SortOrder
+  cloak_options?: Prisma.SortOrder
   _count?: Prisma.ai_routesCountOrderByAggregateInput
   _avg?: Prisma.ai_routesAvgOrderByAggregateInput
   _max?: Prisma.ai_routesMaxOrderByAggregateInput
@@ -378,6 +385,7 @@ export type ai_routesScalarWhereWithAggregatesInput = {
   created_at?: Prisma.DateTimeWithAggregatesFilter<"ai_routes"> | Date | string
   cloak_profile_id?: Prisma.StringNullableWithAggregatesFilter<"ai_routes"> | string | null
   twin_days?: Prisma.IntWithAggregatesFilter<"ai_routes"> | number
+  cloak_options?: Prisma.JsonWithAggregatesFilter<"ai_routes">
 }
 
 export type ai_routesCreateInput = {
@@ -394,6 +402,7 @@ export type ai_routesCreateInput = {
   route_key_hash: string
   created_at?: Date | string
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   vaults: Prisma.vaultsCreateNestedOneWithoutAi_routesInput
   cloak_profiles?: Prisma.cloak_profilesCreateNestedOneWithoutAi_routesInput
 }
@@ -414,6 +423,7 @@ export type ai_routesUncheckedCreateInput = {
   created_at?: Date | string
   cloak_profile_id?: string | null
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUpdateInput = {
@@ -430,6 +440,7 @@ export type ai_routesUpdateInput = {
   route_key_hash?: Prisma.StringFieldUpdateOperationsInput | string
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   vaults?: Prisma.vaultsUpdateOneRequiredWithoutAi_routesNestedInput
   cloak_profiles?: Prisma.cloak_profilesUpdateOneWithoutAi_routesNestedInput
 }
@@ -450,6 +461,7 @@ export type ai_routesUncheckedUpdateInput = {
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   cloak_profile_id?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesCreateManyInput = {
@@ -468,6 +480,7 @@ export type ai_routesCreateManyInput = {
   created_at?: Date | string
   cloak_profile_id?: string | null
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUpdateManyMutationInput = {
@@ -484,6 +497,7 @@ export type ai_routesUpdateManyMutationInput = {
   route_key_hash?: Prisma.StringFieldUpdateOperationsInput | string
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUncheckedUpdateManyInput = {
@@ -502,6 +516,7 @@ export type ai_routesUncheckedUpdateManyInput = {
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   cloak_profile_id?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type Ai_routesListRelationFilter = {
@@ -535,6 +550,7 @@ export type ai_routesCountOrderByAggregateInput = {
   created_at?: Prisma.SortOrder
   cloak_profile_id?: Prisma.SortOrder
   twin_days?: Prisma.SortOrder
+  cloak_options?: Prisma.SortOrder
 }
 
 export type ai_routesAvgOrderByAggregateInput = {
@@ -693,6 +709,7 @@ export type ai_routesCreateWithoutVaultsInput = {
   route_key_hash: string
   created_at?: Date | string
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   cloak_profiles?: Prisma.cloak_profilesCreateNestedOneWithoutAi_routesInput
 }
 
@@ -711,6 +728,7 @@ export type ai_routesUncheckedCreateWithoutVaultsInput = {
   created_at?: Date | string
   cloak_profile_id?: string | null
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesCreateOrConnectWithoutVaultsInput = {
@@ -758,6 +776,7 @@ export type ai_routesScalarWhereInput = {
   created_at?: Prisma.DateTimeFilter<"ai_routes"> | Date | string
   cloak_profile_id?: Prisma.StringNullableFilter<"ai_routes"> | string | null
   twin_days?: Prisma.IntFilter<"ai_routes"> | number
+  cloak_options?: Prisma.JsonFilter<"ai_routes">
 }
 
 export type ai_routesCreateWithoutCloak_profilesInput = {
@@ -774,6 +793,7 @@ export type ai_routesCreateWithoutCloak_profilesInput = {
   route_key_hash: string
   created_at?: Date | string
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   vaults: Prisma.vaultsCreateNestedOneWithoutAi_routesInput
 }
 
@@ -792,6 +812,7 @@ export type ai_routesUncheckedCreateWithoutCloak_profilesInput = {
   route_key_hash: string
   created_at?: Date | string
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesCreateOrConnectWithoutCloak_profilesInput = {
@@ -835,6 +856,7 @@ export type ai_routesCreateManyVaultsInput = {
   created_at?: Date | string
   cloak_profile_id?: string | null
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUpdateWithoutVaultsInput = {
@@ -851,6 +873,7 @@ export type ai_routesUpdateWithoutVaultsInput = {
   route_key_hash?: Prisma.StringFieldUpdateOperationsInput | string
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   cloak_profiles?: Prisma.cloak_profilesUpdateOneWithoutAi_routesNestedInput
 }
 
@@ -869,6 +892,7 @@ export type ai_routesUncheckedUpdateWithoutVaultsInput = {
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   cloak_profile_id?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUncheckedUpdateManyWithoutVaultsInput = {
@@ -886,6 +910,7 @@ export type ai_routesUncheckedUpdateManyWithoutVaultsInput = {
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   cloak_profile_id?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesCreateManyCloak_profilesInput = {
@@ -903,6 +928,7 @@ export type ai_routesCreateManyCloak_profilesInput = {
   route_key_hash: string
   created_at?: Date | string
   twin_days?: number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUpdateWithoutCloak_profilesInput = {
@@ -919,6 +945,7 @@ export type ai_routesUpdateWithoutCloak_profilesInput = {
   route_key_hash?: Prisma.StringFieldUpdateOperationsInput | string
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   vaults?: Prisma.vaultsUpdateOneRequiredWithoutAi_routesNestedInput
 }
 
@@ -937,6 +964,7 @@ export type ai_routesUncheckedUpdateWithoutCloak_profilesInput = {
   route_key_hash?: Prisma.StringFieldUpdateOperationsInput | string
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 export type ai_routesUncheckedUpdateManyWithoutCloak_profilesInput = {
@@ -954,6 +982,7 @@ export type ai_routesUncheckedUpdateManyWithoutCloak_profilesInput = {
   route_key_hash?: Prisma.StringFieldUpdateOperationsInput | string
   created_at?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   twin_days?: Prisma.IntFieldUpdateOperationsInput | number
+  cloak_options?: Prisma.JsonNullValueInput | runtime.InputJsonValue
 }
 
 
@@ -974,6 +1003,7 @@ export type ai_routesSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   created_at?: boolean
   cloak_profile_id?: boolean
   twin_days?: boolean
+  cloak_options?: boolean
   vaults?: boolean | Prisma.vaultsDefaultArgs<ExtArgs>
   cloak_profiles?: boolean | Prisma.ai_routes$cloak_profilesArgs<ExtArgs>
 }, ExtArgs["result"]["ai_routes"]>
@@ -994,6 +1024,7 @@ export type ai_routesSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   created_at?: boolean
   cloak_profile_id?: boolean
   twin_days?: boolean
+  cloak_options?: boolean
   vaults?: boolean | Prisma.vaultsDefaultArgs<ExtArgs>
   cloak_profiles?: boolean | Prisma.ai_routes$cloak_profilesArgs<ExtArgs>
 }, ExtArgs["result"]["ai_routes"]>
@@ -1014,6 +1045,7 @@ export type ai_routesSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   created_at?: boolean
   cloak_profile_id?: boolean
   twin_days?: boolean
+  cloak_options?: boolean
   vaults?: boolean | Prisma.vaultsDefaultArgs<ExtArgs>
   cloak_profiles?: boolean | Prisma.ai_routes$cloak_profilesArgs<ExtArgs>
 }, ExtArgs["result"]["ai_routes"]>
@@ -1034,9 +1066,10 @@ export type ai_routesSelectScalar = {
   created_at?: boolean
   cloak_profile_id?: boolean
   twin_days?: boolean
+  cloak_options?: boolean
 }
 
-export type ai_routesOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"system_id" | "id" | "vault_id" | "name" | "upstream_base_url" | "provider" | "allowed_models" | "entity_types" | "restore_in_response" | "mode" | "transfer_basis" | "route_key_hash" | "created_at" | "cloak_profile_id" | "twin_days", ExtArgs["result"]["ai_routes"]>
+export type ai_routesOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"system_id" | "id" | "vault_id" | "name" | "upstream_base_url" | "provider" | "allowed_models" | "entity_types" | "restore_in_response" | "mode" | "transfer_basis" | "route_key_hash" | "created_at" | "cloak_profile_id" | "twin_days" | "cloak_options", ExtArgs["result"]["ai_routes"]>
 export type ai_routesInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   vaults?: boolean | Prisma.vaultsDefaultArgs<ExtArgs>
   cloak_profiles?: boolean | Prisma.ai_routes$cloak_profilesArgs<ExtArgs>
@@ -1072,6 +1105,7 @@ export type $ai_routesPayload<ExtArgs extends runtime.Types.Extensions.InternalA
     created_at: Date
     cloak_profile_id: string | null
     twin_days: number
+    cloak_options: runtime.JsonValue
   }, ExtArgs["result"]["ai_routes"]>
   composites: {}
 }
@@ -1512,6 +1546,7 @@ export interface ai_routesFieldRefs {
   readonly created_at: Prisma.FieldRef<"ai_routes", 'DateTime'>
   readonly cloak_profile_id: Prisma.FieldRef<"ai_routes", 'String'>
   readonly twin_days: Prisma.FieldRef<"ai_routes", 'Int'>
+  readonly cloak_options: Prisma.FieldRef<"ai_routes", 'Json'>
 }
     
 

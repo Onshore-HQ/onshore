@@ -22,36 +22,13 @@ type Pipeline struct {
 	Mode, FailureMode, KeyHash                              string
 }
 
-// MaxLeafBytes bounds a single scanned value. Larger values are replaced when
-// enforcing rather than forwarded unread.
-const MaxLeafBytes = 1 << 20
-
 const oversizedMarker = "[rv:oversized-value-removed]"
-
-// Item asks for a token.
-type Item struct {
-	Entity string `json:"entity,omitempty"`
-	Field  string `json:"field,omitempty"` // a named vault field, for gateway path rules
-	Value  string `json:"value"`
-}
 
 // Tokenizer issues deterministic tokens. An empty token means no suitable vault
 // field exists, in which case the value is masked rather than passed through.
 type Tokenizer interface {
 	Tokenize(ctx context.Context, vaultID, pipelineID string, items []Item) ([]string, error)
 }
-
-// Leaf is one scannable string in a payload.
-type Leaf struct {
-	Value  string
-	Hint   string // key path, supplies context
-	Path   string // $.a.b, matched against SensitivePaths
-	Record int    // which line or record it belongs to
-	Set    func(string)
-}
-
-// Counts tallies detections per entity and action.
-type Counts map[[2]string]int64
 
 // Outcome is the result of processing one payload.
 type Outcome struct {
@@ -259,15 +236,6 @@ func (pr *Processor) tokens(ctx context.Context, p *Pipeline, need map[[2]string
 		pr.mu.Unlock()
 	}
 	return out, nil
-}
-
-// HintFromPath reduces a key path to its last segments for context scoring.
-func HintFromPath(path string) string {
-	parts := strings.Split(strings.TrimPrefix(path, "$."), ".")
-	if len(parts) > 2 {
-		parts = parts[len(parts)-2:]
-	}
-	return strings.Join(parts, " ")
 }
 
 // ParseSensitivePaths reads "$.customer.bvn:bvn" entries.

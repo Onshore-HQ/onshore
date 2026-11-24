@@ -12,9 +12,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"onshore/data-plane/ee/cloak"
-	"onshore/data-plane/ee/logproc"
+	"onshore/data-plane/internal/cloak"
 	"onshore/data-plane/internal/detect"
+	"onshore/data-plane/internal/payload"
 )
 
 var placeholderRe = regexp.MustCompile(`\[([A-Z][A-Z0-9_]*)_([0-9]+)\]`)
@@ -145,7 +145,7 @@ func withPlaces(text string, ents []detect.Entity, packs []string) []detect.Enti
 
 // cloakText runs detection and the route's settings over one piece of text.
 // entities, when not empty, limits which built-in types are protected.
-func cloakText(rules *detect.RuleSet, s *session, text, path, hint string, entities map[string]bool, enforcing bool, counts logproc.Counts) (string, bool) {
+func cloakText(rules *detect.RuleSet, s *session, text, path, hint string, entities map[string]bool, enforcing bool, counts payload.Counts) (string, bool) {
 	s.country = rules.Country
 	if s.namerOf != s.country && len(s.synth) == 0 {
 		// Stand-in names come from the vault's own country, so replies read naturally there.
@@ -276,7 +276,7 @@ type Cloaked struct {
 // CloakText cloaks one text with the given settings, for the cloak API.
 func CloakText(rules *detect.RuleSet, opts cloak.Options, text string) Cloaked {
 	s := newSession([]byte(text), opts)
-	counts := logproc.Counts{}
+	counts := payload.Counts{}
 	out, _ := cloakText(rules, s, text, "", "", nil, true, counts)
 	byType := map[string]int{}
 	for k, n := range counts {

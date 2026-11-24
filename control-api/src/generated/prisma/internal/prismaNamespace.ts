@@ -5654,7 +5654,8 @@ export const Ai_routesScalarFieldEnum = {
   route_key_hash: 'route_key_hash',
   created_at: 'created_at',
   cloak_profile_id: 'cloak_profile_id',
-  twin_days: 'twin_days'
+  twin_days: 'twin_days',
+  cloak_options: 'cloak_options'
 } as const
 
 export type Ai_routesScalarFieldEnum = (typeof Ai_routesScalarFieldEnum)[keyof typeof Ai_routesScalarFieldEnum]

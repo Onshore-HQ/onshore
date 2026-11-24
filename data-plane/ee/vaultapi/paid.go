@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 
-	"onshore/data-plane/ee/cloak"
 	"onshore/data-plane/ee/gateway"
 	"onshore/data-plane/ee/logproc"
 	"onshore/data-plane/internal/httpapi"
@@ -148,7 +147,7 @@ func (s *api) logsPreview(w http.ResponseWriter, r *http.Request) {
 		p.EntityTypes[e] = true
 	}
 	pl := logproc.ParseBody([]byte(body.Sample))
-	pr := &logproc.Processor{Engine: s.Vault.Engine, Rules: staticRules{s.previewRules(body.Vault)}, Tokenizer: previewTokenizer{}}
+	pr := &logproc.Processor{Engine: s.Vault.Engine, Rules: httpapi.StaticRules{RS: s.PreviewRules(body.Vault)}, Tokenizer: previewTokenizer{}}
 	o, err := pr.Process(r.Context(), p, pl.Leaves)
 	if err != nil {
 		httpapi.WriteErr(w, r, err)
@@ -167,15 +166,6 @@ func (s *api) logsPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // caller authenticates the end user behind a gateway request.
-func (s *api) gatewayCaller(r *http.Request, token, ip, module string) (vault.Caller, error) {
-	c, err := s.Auth.AuthenticateToken(r.Context(), token, ip)
-	if err != nil {
-		return vault.Caller{}, err
-	}
-	c.Module, c.RequestID = module, httpapi.RequestID(r)
-	return c, nil
-}
-
 // gatewayReveal detokenizes for a gateway, as the end user whose token it carries.
 func (s *api) gatewayReveal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -190,7 +180,7 @@ func (s *api) gatewayReveal(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErr(w, r, err)
 		return
 	}
-	c, err := s.gatewayCaller(r, body.CallerToken, body.SourceIP, body.Module)
+	c, err := s.GatewayCaller(r, body.CallerToken, body.SourceIP, body.Module)
 	if err != nil {
 		httpapi.WriteJSON(w, 401, map[string]any{"error": map[string]string{"code": "unauthenticated", "message": "caller token rejected"}})
 		return
@@ -201,35 +191,6 @@ func (s *api) gatewayReveal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.WriteJSON(w, 200, map[string]any{"results": res})
-}
-
-// gatewayDecide answers what a caller may see of each entity type in an AI reply.
-// The values sit in the gateway's memory for one request; only the decision and an
-// audit event pass through here.
-func (s *api) gatewayDecide(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Vault       string         `json:"vault"`
-		Route       string         `json:"route"`
-		CallerToken string         `json:"caller_token"`
-		SourceIP    string         `json:"source_ip"`
-		Purpose     string         `json:"purpose"`
-		Entities    map[string]int `json:"entities"`
-	}
-	if err := httpapi.Decode(r, &body); err != nil {
-		httpapi.WriteErr(w, r, err)
-		return
-	}
-	c, err := s.gatewayCaller(r, body.CallerToken, body.SourceIP, "ai")
-	if err != nil {
-		httpapi.WriteJSON(w, 401, map[string]any{"error": map[string]string{"code": "unauthenticated", "message": "caller token rejected"}})
-		return
-	}
-	out, err := s.Vault.DecideRestore(r.Context(), c, body.Vault, body.Route, body.Purpose, body.Entities)
-	if err != nil {
-		httpapi.WriteErr(w, r, err)
-		return
-	}
-	httpapi.WriteJSON(w, 200, map[string]any{"decisions": out})
 }
 
 // proxyPreview shows a route's rules applied to samples. Nothing is stored.
@@ -244,7 +205,7 @@ func (s *api) proxyPreview(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErr(w, r, err)
 		return
 	}
-	t := &gateway.Transformer{Engine: s.Vault.Engine, Rules: staticRules{s.previewRules(body.Vault)}, Tokenize: gateway.ExampleTokens}
+	t := &gateway.Transformer{Engine: s.Vault.Engine, Rules: httpapi.StaticRules{RS: s.PreviewRules(body.Vault)}, Tokenize: gateway.ExampleTokens}
 	reqOut, _, err1 := t.Request(r.Context(), &body.Route, []byte(body.Request))
 	respOut, _, err2 := t.Response(r.Context(), &body.Route, []byte(body.Response), "")
 	res := map[string]any{"request": string(reqOut), "response": string(respOut)}
@@ -255,25 +216,6 @@ func (s *api) proxyPreview(w http.ResponseWriter, r *http.Request) {
 		res["response_error"] = err2.Error()
 	}
 	httpapi.WriteJSON(w, 200, res)
-}
-
-func (s *api) aiPreview(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Prompt  string        `json:"prompt"`
-		Reply   string        `json:"reply"`
-		Vault   string        `json:"vault_id"`
-		Options cloak.Options `json:"options"`
-	}
-	if err := httpapi.Decode(r, &body); err != nil {
-		httpapi.WriteErr(w, r, err)
-		return
-	}
-	if err := cloak.Validate(body.Options); err != nil {
-		httpapi.WriteErr(w, r, &vault.Error{Status: 400, Code: "invalid_request", Message: err.Error()})
-		return
-	}
-	sent, reply, shown := gateway.PreviewAI(s.previewRules(body.Vault), body.Options, body.Prompt, body.Reply)
-	httpapi.WriteJSON(w, 200, map[string]string{"provider_receives": sent, "provider_reply": reply, "user_sees": shown})
 }
 
 func (s *api) gatewayFile(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +231,7 @@ func (s *api) gatewayFile(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteErr(w, r, err)
 		return
 	}
-	c, err := s.gatewayCaller(r, body.CallerToken, body.SourceIP, "files")
+	c, err := s.GatewayCaller(r, body.CallerToken, body.SourceIP, "files")
 	if err != nil {
 		httpapi.WriteJSON(w, 401, map[string]any{"error": map[string]string{"code": "unauthenticated", "message": "caller token rejected"}})
 		return

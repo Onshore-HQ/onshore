@@ -9,6 +9,8 @@ import { Callout, Steps, Tabs } from "nextra/components";
 
 AI models usually run outside your customers' country. Cloaking replaces identifiers in a prompt with placeholders, stand-in names or less specific values before it leaves, and keeps a sealed map (a **digital twin**) in the vault so the model's reply can be restored for the person who's allowed to see it.
 
+This recipe uses the cloak API, which is part of **Onshore Business** and free on sandbox vaults. If your app can point its OpenAI or Anthropic client at the [AI gateway](/guides/connections/ai-gateway/), that does the same in every edition, with no code beyond the base URL.
+
 ```
 "Hi, I'm Sarah Johnson, 34. My card 4111 1111 1111 1111 was charged £1,250.50 twice."
         │ cloak (in the country)

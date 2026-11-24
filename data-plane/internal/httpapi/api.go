@@ -84,6 +84,12 @@ func (s *Server) Handler() http.Handler {
 	i("POST /internal/licence", s.licence)
 	i("POST /internal/redact", s.redact)
 	i("POST /internal/geo/country", s.geoCountry)
+	// The AI gateway and the rules snapshot (ai.go).
+	i("POST /internal/gateway/decide", s.gatewayDecide)
+	i("POST /internal/gateway/ai-preview", s.aiPreview)
+	i("POST /internal/cloak/options", s.cloakOptions)
+	i("POST /internal/rulesets/versions", s.rulesetVersions)
+	i("POST /internal/rulesets/snapshot", s.rulesetSnapshot)
 	s.applyExtensions(mux)
 	return s.middleware(mux)
 }

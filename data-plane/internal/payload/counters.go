@@ -1,4 +1,4 @@
-package logproc
+package payload
 
 import (
 	"context"

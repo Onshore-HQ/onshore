@@ -17,7 +17,7 @@
 
 When you're breached, attackers get tokens instead of your customers' identities, and you can prove exactly what was touched.
 
-**Use AI without handing it your customers' data.** Point your OpenAI or Anthropic client at Onshore's AI gateway with a one-line change. Before a prompt leaves the country, the gateway swaps names, ID numbers, phone numbers, account details and other personal data for placeholders or realistic stand-in names, so the model works on the task without ever seeing who it's about. Replies come back with the real values restored, but only for people whose access rules allow it.
+**Use AI without handing it your customers' data.** Point your OpenAI or Anthropic client at Onshore's AI gateway with a one-line change. Before a prompt leaves the country, the gateway swaps names, ID numbers, phone numbers, account details and other personal data for placeholders or realistic stand-in names, so the model works on the task without ever seeing who it's about. Replies come back with the real values restored, but only for people whose access rules allow it. The AI gateway is in the free, open source Community edition.
 
 <p align="center">
   <img alt="The Onshore console home: alerts to review, connections, values protected and real values viewed" src=".github/assets/overview.png" width="100%">
@@ -125,7 +125,7 @@ Every SDK is Apache-2.0. Full references: [docs.onshorevault.com/developers/sdks
 | | Community | Business | Enterprise | Onshore Cloud |
 | --- | --- | --- | --- | --- |
 | Licence | AGPL-3.0, free | Commercial | Commercial | Coming soon |
-| What you get | The core vault, detection, basic access rules, audit, SDKs | Everything for production in one country: AI, logs, proxy, secure components, residency map, data subject tools, advanced rules, reports, SSO and SCIM | Several countries under one console, LDAP, SIEM streaming, HSM, 24/7 support | We run it, in each country we open |
+| What you get | The core vault, detection, basic access rules, audit, SDKs, and the AI gateway | Everything for production in one country: language models, shared cloak settings and the cloak API, logs, proxy, secure components, residency map, data subject tools, advanced rules, reports, SSO and SCIM | Several countries under one console, LDAP, SIEM streaming, HSM, 24/7 support | We run it, in each country we open |
 
 Paid features are free for development, testing and on test vaults. See [Editions](https://docs.onshorevault.com/get-started/editions/).
 

@@ -11,15 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	"onshore/data-plane/ee/gateway"
 	"onshore/data-plane/internal/detect"
+	"onshore/data-plane/internal/gateway"
 	"onshore/data-plane/internal/netguard"
 
 	_ "onshore/data-plane/ee/nlp" // paid: language-model detection, when RV_NLP_URL is set
 )
 
 func main() {
-	license.LogStartup("ai-gateway") // paid service: see ee/LICENSE; the vault enforces the edition
+	license.LogStartup("ai-gateway") // community edition (AGPL); language models need Business
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	gateway.Serve(ctx, "ai-gateway", ":8091", func(d *gateway.Deps) (http.Handler, func(context.Context) error, func(context.Context)) {

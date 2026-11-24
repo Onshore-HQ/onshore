@@ -9,6 +9,8 @@ import { Callout, Steps } from "nextra/components";
 
 Support copilots and chatbots paste customer messages straight into a model hosted abroad, identifiers included. The **AI gateway** sits between your app and the model provider. It **cloaks** each prompt before it leaves the country, and restores real values in the reply for people allowed to see them. Your app changes one line: its base URL.
 
+The AI gateway is part of the **Community** edition, free and open source. Shared cloak settings, digital twins and [language models](/guides/language-models/) are part of **Onshore Business**, and free on sandbox vaults. See [Editions](/get-started/editions/).
+
 <Shot src="/screenshots/connections-ai-full.png" alt="The AI tab: an AI route with its cloak setting, digital twin and setup code, then Cloak settings and the Playground" />
 
 ## Create an AI route
@@ -48,7 +50,7 @@ Prompts reach the provider **unchanged** while the route is watch only. Select *
 
 ## Cloak settings
 
-A **cloak setting** chooses what each kind of data becomes before a prompt leaves the country. Without one, every value becomes a placeholder and places are sent as they are.
+A **cloak setting** chooses what each kind of data becomes before a prompt leaves the country. Each AI route has its own. A route made in the console starts with stand-in names, amount ranges, age bands and states (one made through the API starts empty). With every row at its default, every value becomes a placeholder and places are sent as they are.
 
 | Becomes | Example | Comes back in the reply? |
 | --- | --- | --- |
@@ -62,7 +64,11 @@ A **cloak setting** chooses what each kind of data becomes before a prompt leave
 | **State or region** | A place → its state or region | No |
 | **Keep** | Sent as it is | — |
 
-Select **New cloak setting**, name it, and choose for each **kind of data** what it becomes **before it leaves**. The setting shows which routes use it. To delete a setting, move its routes to another setting first.
+On a route, select **Change** under **Cloak setting**, and choose for each **kind of data** what it becomes **before it leaves**.
+
+### Shared cloak settings
+
+With **Onshore Business** (or on a sandbox vault), you can save a setting once and use it on several routes, so one change applies to all of them. Under **Shared cloak settings**, select **New cloak setting**, name it, and choose for each kind of data. Then pick it in a route's **Cloak setting** list. A route on a shared setting uses that setting instead of its own. The setting shows which routes use it. To delete it, move its routes off it first.
 
 The AI can still reason about cloaked text: it knows `[NAME_1]` is a person and `£1,000–£2,000` is an amount.
 
@@ -72,7 +78,7 @@ Tick **Restore real values in replies** to swap placeholders and stand-in names 
 
 ## Digital twins
 
-Normally the map from placeholders back to real values is forgotten after each reply. A **digital twin** keeps it, sealed in the vault and encrypted with the vault's key, for the number of days you choose, so you can restore values later, for example in a saved conversation. Twins are deleted when they expire, and can be deleted early. The gateway returns the twin's ID in `X-RV-Cloak-Id`.
+Digital twins are part of **Onshore Business**, and free on sandbox vaults. Normally the map from placeholders back to real values is forgotten after each reply. A **digital twin** keeps it, sealed in the vault and encrypted with the vault's key, for the number of days you choose, so you can restore values later, for example in a saved conversation. Twins are deleted when they expire, and can be deleted early. The gateway returns the twin's ID in `X-RV-Cloak-Id`.
 
 ## Playground
 

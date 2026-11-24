@@ -2187,5 +2187,14 @@
  "{0}{1} from {2} {3} {4} {5}.",
  "· Packs:",
  "· policy v{0}",
- "العربية, right to left (coming)"
+ "العربية, right to left (coming)",
+ "How “{0}” hides each kind of data",
+ "No shared settings yet. Each route uses its own.",
+ "One setting several routes can share, so a change applies to all of them. Each route can also keep its own. Shared settings need Onshore Business; they are free on sandbox vaults.",
+ "Shared cloak settings",
+ "Shared settings need Onshore Business; they are free on sandbox vaults.",
+ "Shared: {0}",
+ "Stand-in names and ranges",
+ "This route’s own setting",
+ "Turn on to swap values back later, for example in a saved conversation. Needs Onshore Business; free on sandbox vaults."
 ]

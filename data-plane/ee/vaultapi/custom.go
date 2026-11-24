@@ -25,31 +25,6 @@ func writeDefErr(w http.ResponseWriter, r *http.Request, err error) {
 	httpapi.WriteErr(w, r, err)
 }
 
-func (s *api) rulesetVersions(w http.ResponseWriter, r *http.Request) {
-	versions, err := (&vault.DBSource{S: s.Vault}).Versions(r.Context())
-	if err != nil {
-		httpapi.WriteErr(w, r, err)
-		return
-	}
-	httpapi.WriteJSON(w, 200, map[string]any{"versions": versions})
-}
-
-func (s *api) rulesetSnapshot(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Vault string `json:"vault"`
-	}
-	if err := httpapi.Decode(r, &body); err != nil {
-		httpapi.WriteErr(w, r, err)
-		return
-	}
-	snap, err := (&vault.DBSource{S: s.Vault}).Snapshot(r.Context(), body.Vault)
-	if err != nil {
-		httpapi.WriteErr(w, r, err)
-		return
-	}
-	httpapi.WriteJSON(w, 200, snap)
-}
-
 type customBody struct {
 	Vault   string           `json:"vault"`
 	Entity  string           `json:"entity"`
@@ -171,23 +146,6 @@ func (s *api) customValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.WriteJSON(w, 200, res)
-}
-
-// staticRules answers one rule set, for previews.
-type staticRules struct{ rs *detect.RuleSet }
-
-func (s staticRules) For(string) *detect.RuleSet { return s.rs }
-
-// previewRules gives a preview the vault's full rule set, so custom matches show there.
-// An unnamed vault, or one still loading, previews with built-ins.
-func (s *api) previewRules(vault string) *detect.RuleSet {
-	if vault != "" {
-		if rs := s.Vault.RulesFor(vault); rs != nil {
-			return rs
-		}
-	}
-	// No vault, no country: look for every country's data rather than assume one.
-	return detect.GlobalRuleSet(s.Vault.Engine)
 }
 
 // customQuickBench is the builder's cost estimate: a small sample, not the publish check.

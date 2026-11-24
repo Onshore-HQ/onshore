@@ -91,6 +91,10 @@ func (s *Server) readBody(r *http.Request) ([]byte, error) {
 
 const errTooLarge = stringError("payload too large")
 
+type stringError string
+
+func (e stringError) Error() string { return string(e) }
+
 type signal string
 
 const (

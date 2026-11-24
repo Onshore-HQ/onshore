@@ -44,21 +44,16 @@ func register(srv *httpapi.Server, r httpapi.Routes) {
 	r.Public("POST /embed/v1/collect", s.embedCollect)
 	r.Public("POST /embed/v1/reveal", s.embedReveal)
 
-	// Log pipelines, the AI gateway, the HTTP proxy and files.
+	// Log pipelines, the HTTP proxy and files. The AI gateway's routes are core (internal/httpapi/ai.go).
 	in := func(p string, h http.HandlerFunc) { r.Internal(p, b, h) }
 	in("POST /internal/logs/tokenize", s.logsTokenize)
 	in("POST /internal/logs/preview", s.logsPreview)
 	in("POST /internal/gateway/reveal", s.gatewayReveal)
-	in("POST /internal/gateway/decide", s.gatewayDecide)
 	in("POST /internal/gateway/proxy-preview", s.proxyPreview)
-	in("POST /internal/gateway/ai-preview", s.aiPreview)
 	in("POST /internal/gateway/file", s.gatewayFile)
 	in("POST /internal/cloak/twin", s.cloakTwinSave)
-	in("POST /internal/cloak/options", s.cloakOptions)
 
-	// Your own data types.
-	in("POST /internal/rulesets/versions", s.rulesetVersions)
-	in("POST /internal/rulesets/snapshot", s.rulesetSnapshot)
+	// Your own data types. The rules snapshot they feed is core.
 	in("POST /internal/custom/check", s.customCheck)
 	in("POST /internal/custom/bench", s.customBench)
 	in("POST /internal/custom/samples/add", s.customSamplesAdd)

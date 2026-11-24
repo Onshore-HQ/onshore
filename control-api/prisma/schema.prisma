@@ -414,6 +414,7 @@ model ai_routes {
   created_at          DateTime @default(now()) @db.Timestamptz(6)
   cloak_profile_id    String?
   twin_days           Int      @default(0)
+  cloak_options       Json     @default("{}")
   vaults              vaults   @relation(fields: [vault_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cloak_profiles      cloak_profiles? @relation(fields: [cloak_profile_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 

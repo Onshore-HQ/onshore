@@ -5,7 +5,7 @@ import { Badge, Copy, Empty, ErrorLine, Loading, Modal, TypedConfirm, ShownOnce 
 import { control, useLoad } from "@/lib/api";
 import { modeLabel } from "@/lib/labels";
 
-interface Route { id: string; vault_id: string; name: string; provider: string; upstream_base_url: string; allowed_models: string[]; restore_in_response: boolean; mode: string; transfer_basis: string; setup: string; cloak_profile_id: string | null; twin_days: number }
+interface Route { id: string; vault_id: string; name: string; provider: string; upstream_base_url: string; allowed_models: string[]; restore_in_response: boolean; mode: string; transfer_basis: string; setup: string; cloak_options: Record<string, string>; cloak_profile_id: string | null; twin_days: number }
 interface Choice { value: string; label: string; example: string }
 interface Category { key: string; label: string; default: string; choices: Choice[]; packs?: string[] }
 interface Profile { id: string; vault_id: string; name: string; options: Record<string, string>; routes: { id: string; name: string }[] }
@@ -13,6 +13,8 @@ interface Vault { id: string; name: string; packs?: string[] }
 
 const SAMPLE = "Customer Sarah Johnson (DOB 1988-03-14) of Brooklyn says $8,500 left her account without her approval. Her SSN is 123-45-6789, her IBAN is GB82 WEST 1234 5698 7654 32 and her number is +1 212 555 0100. Please draft a reply.";
 const TWIN_DAYS = [0, 7, 30, 90];
+/** A good start: the model keeps the meaning, and names come back in replies. */
+const RECOMMENDED: Record<string, string> = { person_name: "synthetic", amount: "band", date: "age_band", address: "state" };
 const errText = (e: unknown) => (e instanceof Error ? e.message : "failed");
 
 /** A short line for a setting: what changes from the default. */
@@ -60,7 +62,7 @@ function Grid({ cats: all, packs, value, onChange }: { cats: Category[]; packs: 
 function ProfileEditor({ cats, vaults, profile, onClose, onDone }: { cats: Category[]; vaults: Vault[]; profile: Profile | null; onClose: () => void; onDone: () => void }) {
   const [vault, setVault] = useState(profile?.vault_id ?? vaults[0]?.id ?? "");
   const [name, setName] = useState(profile?.name ?? "");
-  const [options, setOptions] = useState<Record<string, string>>(profile?.options ?? { person_name: "synthetic", amount: "band", date: "age_band", address: "state" });
+  const [options, setOptions] = useState<Record<string, string>>(profile?.options ?? RECOMMENDED);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Only what differs from a kind's default is stored, so later defaults still apply.
@@ -91,6 +93,29 @@ function ProfileEditor({ cats, vaults, profile, onClose, onDone }: { cats: Categ
   );
 }
 
+function RouteCloakEditor({ cats, vault, route, onClose, onDone }: { cats: Category[]; vault: Vault | undefined; route: Route; onClose: () => void; onDone: () => void }) {
+  const [options, setOptions] = useState<Record<string, string>>(route.cloak_options ?? {});
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Modal title={tr("How “{0}” hides each kind of data", { 0: route.name })} onClose={onClose}>
+      <p className="small muted">{tr("Rows follow the vault’s country packs. Add a pack in Settings, Locations and laws, to cloak another country’s IDs.")}</p>
+      <Grid cats={cats} packs={vault?.packs ?? []} value={options} onChange={setOptions} />
+      <ErrorLine error={error} />
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <button onClick={() => setOptions({})}>{tr("Placeholders for everything")}</button>
+        <div className="row">
+          <button onClick={onClose}>{tr("Cancel")}</button>
+          <button className="primary" onClick={async () => {
+            setError(null);
+            const changed = Object.fromEntries(Object.entries(options).filter(([k, v]) => cats.find((c) => c.key === k)?.default !== v));
+            try { await control(`/v1/ai-routes/${route.id}`, { method: "PATCH", body: { cloak_options: changed } }); onDone(); } catch (e) { setError(errText(e)); }
+          }}>{tr("Save")}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function CloakSettings({ cats, profiles, vaults, reload }: { cats: Category[]; profiles: Profile[]; vaults: Vault[]; reload: () => void }) {
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,13 +124,13 @@ function CloakSettings({ cats, profiles, vaults, reload }: { cats: Category[]; p
     <div className="card">
       <div className="spread">
         <div>
-          <h2>{tr("Cloak settings")}</h2>
-          <p className="small muted">{tr("Choose what each kind of data becomes before a prompt leaves the country: a placeholder, a realistic stand-in name, or a less specific value such as an amount range, an age range or a state. The AI can still reason about it, and nothing identifies the person.")}</p>
+          <h2>{tr("Shared cloak settings")}</h2>
+          <p className="small muted">{tr("One setting several routes can share, so a change applies to all of them. Each route can also keep its own. Shared settings need Onshore Business; they are free on sandbox vaults.")}</p>
         </div>
         <button className="primary" disabled={vaults.length === 0} onClick={() => setEditing("new")}>{tr("New cloak setting")}</button>
       </div>
       {profiles.length === 0 ? (
-        <p className="small muted">{tr("No settings yet. Without one, every value becomes a placeholder and places are sent as they are.")}</p>
+        <p className="small muted">{tr("No shared settings yet. Each route uses its own.")}</p>
       ) : (
         <div className="tablewrap">
           <table>
@@ -150,12 +175,12 @@ function Playground({ vaults, profiles }: { vaults: Vault[]; profiles: Profile[]
       <p className="small muted">{tr("Type a prompt, using synthetic data. Nothing is sent to any provider or stored.")}</p>
       <div className="row">
         <label className="field"><span>{tr("Detection rules from")}</span><select value={vault} onChange={(e) => { setVault(e.target.value); setProfile(""); }}><option value="">{tr("Built-in entities only")}</option>{vaults.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
-        <label className="field"><span>{tr("Cloak setting")}</span><select value={profile} onChange={(e) => setProfile(e.target.value)}><option value="">{tr("Placeholders for everything")}</option>{usable.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <label className="field"><span>{tr("Cloak setting")}</span><select value={profile} onChange={(e) => setProfile(e.target.value)}><option value="">{tr("Placeholders for everything")}</option><option value="recommended">{tr("Stand-in names and ranges")}</option>{usable.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       </div>
       <textarea className="code" aria-label={tr("Prompt")} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       <div className="row"><button className="primary" onClick={async () => {
         setError(null);
-        try { setRes(await control("/v1/ai-routes/preview", { body: { prompt, ...(vault ? { vault_id: vault } : {}), ...(profile ? { profile_id: profile } : {}) } })); } catch (e) { setError(errText(e)); }
+        try { setRes(await control("/v1/ai-routes/preview", { body: { prompt, ...(vault ? { vault_id: vault } : {}), ...(profile === "recommended" ? { options: RECOMMENDED } : profile ? { profile_id: profile } : {}) } })); } catch (e) { setError(errText(e)); }
       }}>{tr("Show both sides")}</button></div>
       <ErrorLine error={error} />
       {res && (
@@ -168,8 +193,9 @@ function Playground({ vaults, profiles }: { vaults: Vault[]; profiles: Profile[]
   );
 }
 
-function RouteCard({ r, profiles, cats, reload }: { r: Route; profiles: Profile[]; cats: Category[]; reload: () => void }) {
+function RouteCard({ r, profiles, cats, vaults, reload }: { r: Route; profiles: Profile[]; cats: Category[]; vaults: Vault[]; reload: () => void }) {
   const [confirm, setConfirm] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const update = async (patch: object) => {
     setError(null);
@@ -189,16 +215,18 @@ function RouteCard({ r, profiles, cats, reload }: { r: Route; profiles: Profile[
       <div className="row" style={{ alignItems: "flex-start" }}>
         <label className="field" style={{ maxWidth: 320 }}><span>{tr("Cloak setting")}</span>
           <select value={r.cloak_profile_id ?? ""} onChange={(e) => update({ cloak_profile_id: e.target.value || null })}>
-            <option value="">{tr("Placeholders for everything")}</option>
-            {mine.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <option value="">{tr("This route’s own setting")}</option>
+            {mine.map((p) => <option key={p.id} value={p.id}>{tr("Shared: {0}", { 0: p.name })}</option>)}
           </select>
-          <span className="small muted">{current ? summary(cats, current.options) : tr("Every value becomes a placeholder; places are sent as they are.")}</span>
+          <span className="small muted">{current ? summary(cats, current.options) : summary(cats, r.cloak_options ?? {})}</span>
+          {!current && <button style={{ alignSelf: "flex-start", marginTop: 6 }} onClick={() => setEditing(true)}>{tr("Change")}</button>}
+          {mine.length > 0 && <span className="small muted">{tr("Shared settings need Onshore Business; they are free on sandbox vaults.")}</span>}
         </label>
         <label className="field" style={{ maxWidth: 320 }}><span>{tr("Digital twin")}</span>
           <select value={r.twin_days} onChange={(e) => update({ twin_days: Number(e.target.value) })}>
             {TWIN_DAYS.map((d) => <option key={d} value={d}>{d === 0 ? tr("Off: the map is forgotten after each reply") : tr("Keep for {0} days", { 0: d })}</option>)}
           </select>
-          <span className="small muted">{r.twin_days > 0 ? tr("Each request's map is sealed in the vault, and its id comes back in the X-RV-Cloak-Id header. Your app swaps values back later with the uncloak API, as far as policy allows.") : tr("Turn on to swap values back later, for example in a saved conversation.")}</span>
+          <span className="small muted">{r.twin_days > 0 ? tr("Each request's map is sealed in the vault, and its id comes back in the X-RV-Cloak-Id header. Your app swaps values back later with the uncloak API, as far as policy allows.") : tr("Turn on to swap values back later, for example in a saved conversation. Needs Onshore Business; free on sandbox vaults.")}</span>
         </label>
       </div>
       <label className="row small"><input type="checkbox" checked={r.restore_in_response} onChange={(e) => update({ restore_in_response: e.target.checked })} />{tr("Restore real values in replies, for callers whose policy allows plaintext. Everyone else gets masked values.")}</label>
@@ -210,6 +238,7 @@ function RouteCard({ r, profiles, cats, reload }: { r: Route; profiles: Profile[
       <div className="spread"><span className="small muted">{tr("Setup")}</span><Copy text={r.setup} /></div>
       <pre className="pre">{r.setup}</pre>
       <ErrorLine error={error} />
+      {editing && <RouteCloakEditor cats={cats} vault={vaults.find((v) => v.id === r.vault_id)} route={r} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
       {confirm && (
         <TypedConfirm title={r.mode === "shadow" ? tr("Turn protection on") : tr("Go back to watch only")} word={r.mode === "shadow" ? "protect" : "watch"} onClose={() => setConfirm(false)} onConfirm={() => update({ mode: r.mode === "shadow" ? "enforcing" : "shadow" })}>
           {r.mode === "shadow" ? tr("Identifiers are cloaked before prompts leave, using this route's cloak setting. Images, audio and files are refused, because they cannot be scanned.") : tr("Prompts will again reach the provider unredacted, and the residency report will show this.")}
@@ -244,7 +273,7 @@ function NewRoute({ vaults, onClose, onDone }: { vaults: Vault[]; onClose: () =>
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button onClick={onClose}>{tr("Cancel")}</button>
         <button className="primary" disabled={!f.vault_id || !f.name || !f.models} onClick={async () => {
-          try { setCreated(await control("/v1/ai-routes", { body: { vault_id: f.vault_id, name: f.name, provider: f.provider, upstream_base_url: f.upstream_base_url, allowed_models: f.models.split(",").map((s) => s.trim()).filter(Boolean) } })); } catch (e) { setError(errText(e)); }
+          try { setCreated(await control("/v1/ai-routes", { body: { vault_id: f.vault_id, name: f.name, provider: f.provider, upstream_base_url: f.upstream_base_url, cloak_options: RECOMMENDED, allowed_models: f.models.split(",").map((s) => s.trim()).filter(Boolean) } })); } catch (e) { setError(errText(e)); }
         }}>{tr("Create")}</button>
       </div>
     </Modal>
@@ -263,7 +292,7 @@ export function AiRoutes({ startNew = false }: { startNew?: boolean }) {
       <div className="row"><button className="primary" onClick={() => setCreating(true)}>{tr("New AI route")}</button></div>
       <Loading error={error ?? ck.error} loading={(loading && !value) || ck.loading} />
       {value?.routes.length === 0 && <Empty title={tr("No AI tools connected yet")}>{tr("Send your AI requests through a route, and sensitive values are cloaked before prompts leave.")}</Empty>}
-      {value?.routes.map((r) => <RouteCard key={r.id} r={r} profiles={ck.profiles} cats={ck.cats} reload={reloadAll} />)}
+      {value?.routes.map((r) => <RouteCard key={r.id} r={r} profiles={ck.profiles} cats={ck.cats} vaults={vs} reload={reloadAll} />)}
       {ck.cats.length > 0 && <CloakSettings cats={ck.cats} profiles={ck.profiles} vaults={vs} reload={reloadAll} />}
       <Playground vaults={vs} profiles={ck.profiles} />
       {creating && <NewRoute vaults={vs} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}

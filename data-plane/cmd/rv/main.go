@@ -29,11 +29,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"onshore/data-plane/ee/logproc"
 	"onshore/data-plane/internal/audit"
 	"onshore/data-plane/internal/detect"
 	"onshore/data-plane/internal/license"
 	"onshore/data-plane/internal/mask"
+	"onshore/data-plane/internal/payload"
 	"onshore/data-plane/internal/store"
 	"onshore/data-plane/internal/tlsutil"
 	"onshore/data-plane/migrations"
@@ -574,7 +574,7 @@ func cmdDoctor(args []string) error {
 
 type noTokens struct{}
 
-func (noTokens) Tokenize(context.Context, string, string, []logproc.Item) ([]string, error) {
+func (noTokens) Tokenize(context.Context, string, string, []payload.Item) ([]string, error) {
 	return nil, errors.New("unused in shadow mode")
 }
 
@@ -608,7 +608,7 @@ func cmdScan(args []string) error {
 	unique := map[detect.EntityType]map[[32]byte]struct{}{}
 	var lines, affected int64
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), logproc.MaxLeafBytes)
+	sc.Buffer(make([]byte, 64*1024), payload.MaxLeafBytes)
 	for sc.Scan() {
 		lines++
 		line := sc.Text()

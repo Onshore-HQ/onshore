@@ -21,6 +21,7 @@ import { evidenceRoutes } from "./routes/evidence.js";
 import { customEntityRoutes } from "./ee/routes/custom-entities.js";
 import { detectionModelRoutes } from "./ee/routes/detection-models.js";
 import { gatewayRoutes } from "./ee/routes/gateways.js";
+import { aiRoutes } from "./routes/ai-routes.js";
 import { peopleRoutes } from "./routes/people.js";
 import { pipelineRoutes } from "./ee/routes/pipelines.js";
 import { policyRoutes } from "./routes/policies.js";
@@ -82,7 +83,8 @@ await app.register(locationRoutes);
 await app.register(policyRoutes);
 await app.register(peopleRoutes);
 await app.register(gated("business", "log pipelines", pipelineRoutes));
-await app.register(gated("business", "the AI gateway and HTTP proxy", gatewayRoutes));
+await app.register(aiRoutes); // community edition; its paid extras check the edition themselves
+await app.register(gated("business", "the HTTP proxy and shared cloak settings", gatewayRoutes));
 await app.register(ssoRoutes);
 await app.register(identityRoutes);
 await app.register(gated("business", "SCIM", scimRoutes));

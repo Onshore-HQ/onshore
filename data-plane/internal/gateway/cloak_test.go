@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"onshore/data-plane/ee/cloak"
-	"onshore/data-plane/ee/logproc"
+	"onshore/data-plane/internal/cloak"
 	"onshore/data-plane/internal/detect"
 	"onshore/data-plane/internal/netguard"
+	"onshore/data-plane/internal/payload"
 )
 
 var cloakOpts = cloak.Options{"person_name": cloak.Synthetic, "amount_ngn": cloak.Band, "date": cloak.AgeBand, "address": cloak.State}
@@ -24,7 +24,7 @@ func cloakServer(t *testing.T, upstream http.HandlerFunc) func(body string) (*ht
 	t.Helper()
 	up := httptest.NewServer(upstream)
 	t.Cleanup(up.Close)
-	a := &AI{Engine: detect.New(detect.Config{}), AllowHTTP: true, Upstream: netguard.Client(5*time.Second, true), routes: map[string]*AIRoute{"r": {ID: "r", VaultID: "v", Name: "r", Upstream: up.URL, Provider: "x", Mode: "enforcing", KeyHash: hashKey("k"), AllowedModels: []string{"m"}, Cloak: cloakOpts}}}
+	a := &AI{Engine: detect.New(detect.Config{}), AllowHTTP: true, Upstream: netguard.Client(5*time.Second, true), routes: map[string]*AIRoute{"r": {ID: "r", VaultID: "v", Name: "r", Upstream: up.URL, Provider: "x", Mode: "enforcing", KeyHash: HashKey("k"), AllowedModels: []string{"m"}, Cloak: cloakOpts}}}
 	srv := httptest.NewServer(a.Handler())
 	t.Cleanup(srv.Close)
 	return func(body string) (*http.Response, string) {
@@ -157,7 +157,7 @@ func TestCountryPacksCloak(t *testing.T) {
 	}
 	// Routes made before packs list only Nigerian types; pack types still pass their filter.
 	s := newSession(nil, nil)
-	out, _ := cloakText(rules, s, "SSN-free text, NHS 943 476 5919", "", "", map[string]bool{"bvn": true}, true, logproc.Counts{})
+	out, _ := cloakText(rules, s, "SSN-free text, NHS 943 476 5919", "", "", map[string]bool{"bvn": true}, true, payload.Counts{})
 	if !strings.Contains(out, "[UK_NHS_1]") {
 		t.Fatalf("pack types must pass an old route's filter: %q", out)
 	}

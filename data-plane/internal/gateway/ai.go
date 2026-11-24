@@ -15,10 +15,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"onshore/data-plane/ee/cloak"
-	"onshore/data-plane/ee/logproc"
+	"onshore/data-plane/internal/cloak"
 	"onshore/data-plane/internal/detect"
 	"onshore/data-plane/internal/mask"
+	"onshore/data-plane/internal/payload"
 )
 
 // AIRoute is one chatbot or agent-assist backend's path to a model provider.
@@ -26,8 +26,8 @@ type AIRoute struct {
 	ID, VaultID, Name, Upstream, Provider, Mode, KeyHash string
 	AllowedModels, EntityTypes                           []string
 	Restore                                              bool
-	// Cloak holds the route's cloak settings; empty means a placeholder for
-	// every value, as before settings existed.
+	// Cloak holds the route's cloak settings: its shared profile's when it has
+	// one, else its own. Empty means a placeholder for every value.
 	Cloak cloak.Options
 	// TwinDays, when above zero, keeps each request's map in the vault for that
 	// many days and returns its id in X-RV-Cloak-Id.
@@ -43,7 +43,7 @@ type AI struct {
 	Vault     *VaultClient
 	Upstream  *http.Client
 	AllowHTTP bool
-	Counters  logproc.Counters
+	Counters  payload.Counters
 
 	mu     sync.RWMutex
 	routes map[string]*AIRoute
@@ -103,25 +103,25 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	rt := a.routes[r.PathValue("route")]
 	a.mu.RUnlock()
-	if rt == nil || !keyOK(r.Header.Get("X-RV-Route-Key"), rt.KeyHash) {
-		fail(w, 401, "unauthenticated", "unknown route or bad key")
+	if rt == nil || !KeyOK(r.Header.Get("X-RV-Route-Key"), rt.KeyHash) {
+		Fail(w, 401, "unauthenticated", "unknown route or bad key")
 		return
 	}
 	endpoint := r.PathValue("endpoint")
 	if !aiEndpoints[endpoint] {
-		fail(w, 404, "not_routed", "this gateway forwards chat/completions, responses, embeddings and messages")
+		Fail(w, 404, "not_routed", "this gateway forwards chat/completions, responses, embeddings and messages")
 		return
 	}
-	body, err := readLimited(http.MaxBytesReader(w, r.Body, MaxBody+1))
+	body, err := ReadLimited(http.MaxBytesReader(w, r.Body, MaxBody+1))
 	if err != nil {
-		fail(w, 413, "too_large", "body too large")
+		Fail(w, 413, "too_large", "body too large")
 		return
 	}
 	var head struct {
 		Model string `json:"model"`
 	}
 	if err := json.Unmarshal(body, &head); err != nil {
-		fail(w, 400, "invalid_request", "the body must be JSON")
+		Fail(w, 400, "invalid_request", "the body must be JSON")
 		return
 	}
 	allowed := false
@@ -129,7 +129,7 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 		allowed = allowed || m == head.Model
 	}
 	if !allowed {
-		fail(w, 403, "model_not_allowed", "this route does not allow that model")
+		Fail(w, 403, "model_not_allowed", "this route does not allow that model")
 		return
 	}
 	entities := map[string]bool{}
@@ -139,25 +139,25 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 	enforcing := rt.Mode == "enforcing"
 	rules := detect.SetFor(a.Rules, a.Engine, rt.VaultID)
 	if rules == nil {
-		fail(w, 503, "detection_not_ready", "detection rules are not loaded yet; nothing was sent")
+		Fail(w, 503, "detection_not_ready", "detection rules are not loaded yet; nothing was sent")
 		return
 	}
 	sess := newSession(body, rt.Cloak)
-	counts := logproc.Counts{}
+	counts := payload.Counts{}
 
 	var doc any
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
 	if err := dec.Decode(&doc); err != nil {
-		fail(w, 400, "invalid_request", "the body must be JSON")
+		Fail(w, 400, "invalid_request", "the body must be JSON")
 		return
 	}
 	if enforcing && hasBinary(doc) {
-		fail(w, 422, "unsupported_content", "images, audio and files cannot be scanned, so they cannot pass this route")
+		Fail(w, 422, "unsupported_content", "images, audio and files cannot be scanned, so they cannot pass this route")
 		return
 	}
 	out := body
-	pl := logproc.ParseBody(body)
+	pl := payload.ParseBody(body)
 	for _, l := range pl.Leaves {
 		if skipLeaf(l.Path) {
 			continue
@@ -168,7 +168,7 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if enforcing {
 		if out, err = pl.Encode(nil); err != nil {
-			fail(w, 500, "internal", "could not encode the request")
+			Fail(w, 500, "internal", "could not encode the request")
 			return
 		}
 	}
@@ -177,14 +177,14 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 	if enforcing && rt.TwinDays > 0 && len(sess.byPlaceholder) > 0 {
 		id, err := a.Vault.SaveTwin(r.Context(), rt.VaultID, rt.ID, rt.TwinDays, sess.twin())
 		if err != nil {
-			fail(w, 503, "vault_unavailable", "the digital twin could not be saved; nothing was sent")
+			Fail(w, 503, "vault_unavailable", "the digital twin could not be saved; nothing was sent")
 			return
 		}
 		w.Header().Set("X-RV-Cloak-Id", id)
 	}
-	u, err := safeUpstream(rt.Upstream, a.AllowHTTP)
+	u, err := SafeUpstream(rt.Upstream, a.AllowHTTP)
 	if err != nil {
-		fail(w, 502, "bad_upstream", err.Error())
+		Fail(w, 502, "bad_upstream", err.Error())
 		return
 	}
 	target := *u
@@ -194,22 +194,22 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(out))
 	if err != nil {
-		fail(w, 502, "bad_upstream", "could not build the request")
+		Fail(w, 502, "bad_upstream", "could not build the request")
 		return
 	}
-	copyRequestHeaders(req.Header, r.Header)
+	CopyRequestHeaders(req.Header, r.Header)
 	resp, err := a.Upstream.Do(req)
 	if err != nil {
-		fail(w, 502, "upstream_unavailable", "the provider cannot be reached")
+		Fail(w, 502, "upstream_unavailable", "the provider cannot be reached")
 		return
 	}
 	defer resp.Body.Close()
-	a.Counters.RecordTo(rt.VaultID, "ai", rt.ID, rt.Provider, logproc.HostOf(rt.Upstream), counts, 1)
+	a.Counters.RecordTo(rt.VaultID, "ai", rt.ID, rt.Provider, payload.HostOf(rt.Upstream), counts, 1)
 
-	rs := &restorer{rules: rules, a: a, rt: rt, s: sess, caller: r.Header.Get("X-RV-Caller-Token"), ip: clientIP(r), purpose: r.Header.Get("X-RV-Purpose")}
+	rs := &restorer{rules: rules, a: a, rt: rt, s: sess, caller: r.Header.Get("X-RV-Caller-Token"), ip: ClientIP(r), purpose: r.Header.Get("X-RV-Purpose")}
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		for k, vs := range resp.Header {
-			if c := http.CanonicalHeaderKey(k); !hopHeaders[c] {
+			if c := http.CanonicalHeaderKey(k); !HopHeaders[c] {
 				w.Header()[c] = vs
 			}
 		}
@@ -217,9 +217,9 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 		rs.stream(ctx, w, resp)
 		return
 	}
-	respBody, err := readLimited(resp.Body)
+	respBody, err := ReadLimited(resp.Body)
 	if err != nil {
-		fail(w, 502, "too_large", "the provider response is too large")
+		Fail(w, 502, "too_large", "the provider response is too large")
 		return
 	}
 	final, err := rs.document(ctx, respBody)
@@ -228,7 +228,7 @@ func (a *AI) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for k, vs := range resp.Header {
-		if c := http.CanonicalHeaderKey(k); !hopHeaders[c] {
+		if c := http.CanonicalHeaderKey(k); !HopHeaders[c] {
 			w.Header()[c] = vs
 		}
 	}
@@ -254,10 +254,10 @@ type restorer struct {
 
 func (rs *restorer) failClosed(w http.ResponseWriter, err error) {
 	if errors.Is(err, ErrCallerRejected) {
-		fail(w, 401, "unauthenticated", "caller token rejected")
+		Fail(w, 401, "unauthenticated", "caller token rejected")
 		return
 	}
-	fail(w, 503, "vault_unavailable", "the vault cannot be reached")
+	Fail(w, 503, "vault_unavailable", "the vault cannot be reached")
 }
 
 // decide runs at most once per request, and only if a placeholder came back.
@@ -524,7 +524,7 @@ func (rs *restorer) event(ev map[string]any) {
 
 // Refresh reloads AI routes.
 func (a *AI) Refresh(ctx context.Context) error {
-	rows, err := a.Pool.Query(ctx, `SELECT r.id,r.vault_id,r.name,r.upstream_base_url,r.provider,r.mode,r.route_key_hash,r.allowed_models,r.entity_types,r.restore_in_response,r.twin_days,COALESCE(p.options,'{}'::jsonb)
+	rows, err := a.Pool.Query(ctx, `SELECT r.id,r.vault_id,r.name,r.upstream_base_url,r.provider,r.mode,r.route_key_hash,r.allowed_models,r.entity_types,r.restore_in_response,r.twin_days,COALESCE(p.options,r.cloak_options,'{}'::jsonb)
 		FROM control.ai_routes r LEFT JOIN control.cloak_profiles p ON p.id=r.cloak_profile_id`)
 	if err != nil {
 		return err
@@ -562,7 +562,7 @@ func (a *AI) Run(ctx context.Context) {
 // what the user would get back with no caller permission. Nothing is sent or stored.
 func PreviewAI(rules *detect.RuleSet, opts cloak.Options, prompt, reply string) (string, string, string) {
 	s := newSession([]byte(prompt), opts)
-	sent, _ := cloakText(rules, s, prompt, "", "", nil, true, logproc.Counts{})
+	sent, _ := cloakText(rules, s, prompt, "", "", nil, true, payload.Counts{})
 	if reply == "" {
 		reply = sent
 	}

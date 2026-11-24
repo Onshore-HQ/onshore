@@ -2235,5 +2235,14 @@
   "Every feature is on, for development and testing only. Vaults in other countries run on their own installs.": "Toutes les fonctionnalités sont activées, pour le développement et les tests uniquement. Les coffres dans d’autres pays fonctionnent sur leurs propres installations.",
   "This edition keeps one country per install": "Cette édition garde un pays par installation",
   "This edition keeps one country per install. Remove the others to continue.": "Cette édition garde un pays par installation. Retirez les autres pour continuer.",
-  "Development build, for development and testing only": "Version de développement, pour le développement et les tests uniquement"
+  "Development build, for development and testing only": "Version de développement, pour le développement et les tests uniquement",
+  "How “{0}” hides each kind of data": "Comment « {0} » masque chaque type de donnée",
+  "No shared settings yet. Each route uses its own.": "Aucun réglage partagé pour l’instant. Chaque route utilise le sien.",
+  "One setting several routes can share, so a change applies to all of them. Each route can also keep its own. Shared settings need Onshore Business; they are free on sandbox vaults.": "Un réglage que plusieurs routes peuvent partager : une modification s’applique à toutes. Chaque route peut aussi garder le sien. Les réglages partagés nécessitent Onshore Business ; ils sont gratuits sur les coffres de test.",
+  "Shared cloak settings": "Réglages de masquage partagés",
+  "Shared settings need Onshore Business; they are free on sandbox vaults.": "Les réglages partagés nécessitent Onshore Business ; ils sont gratuits sur les coffres de test.",
+  "Shared: {0}": "Partagé : {0}",
+  "Stand-in names and ranges": "Noms de substitution et fourchettes",
+  "This route’s own setting": "Réglage propre à cette route",
+  "Turn on to swap values back later, for example in a saved conversation. Needs Onshore Business; free on sandbox vaults.": "Activez-le pour rétablir les valeurs plus tard, par exemple dans une conversation enregistrée. Nécessite Onshore Business ; gratuit sur les coffres de test."
 }

@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"onshore/data-plane/ee/cloak"
 	"onshore/data-plane/ee/gateway"
+	"onshore/data-plane/internal/cloak"
 	"onshore/data-plane/internal/vault"
 )
 
@@ -146,9 +146,4 @@ func (s *api) cloakTwinSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.WriteJSON(w, 200, map[string]string{"id": id})
-}
-
-// cloakOptions lists every kind of data and its choices, for the console grid.
-func (s *api) cloakOptions(w http.ResponseWriter, r *http.Request) {
-	httpapi.WriteJSON(w, 200, map[string]any{"categories": cloak.Categories})
 }
